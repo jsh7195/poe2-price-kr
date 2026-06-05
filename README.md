@@ -3,6 +3,16 @@
 Path of Exile 2 아이템을 **한글 이름으로 검색**하면 [poe.ninja](https://poe.ninja/poe2) 시세(divine · exalted)를
 바로 보여주는 Windows 데스크톱 앱 (Electron).
 
+## ⬇️ 다운로드
+
+### 👉 [최신 버전 다운로드 (Releases)](https://github.com/jsh7195/poe2-price-kr/releases/latest)
+
+- **`...-setup.exe`** — 설치본 (**자동 업데이트 지원**, 권장)
+- **`...-portable.exe`** — 무설치 포터블 (자동 업데이트는 안 됨)
+
+> 실행 후 **관리자 권한으로 재실행** 버튼을 누르고, 게임을 **창 모드 전체화면**으로 두세요.
+> 서명되지 않은 앱이라 SmartScreen 경고가 뜨면 **추가 정보 → 실행**.
+
 ## 왜 만들었나
 
 기존 시세 확인 흐름은 번거로웠습니다.
