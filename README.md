@@ -48,6 +48,25 @@ npm run dist   # dist/ 에 설치파일(setup.exe) + 포터블(portable.exe)
 
 > 서명되지 않은 앱이라 Windows SmartScreen 경고가 뜰 수 있습니다 → **추가 정보 → 실행** 클릭.
 
+## 🔄 새 버전 릴리스 (자동 업데이트 배포)
+
+GitHub Actions가 태그를 감지해 **Windows 설치본을 자동 빌드·게시**합니다 (로컬 관리자 빌드 불필요).
+
+```bash
+# package.json 의 "version" 을 올린다 (예: 1.0.0 → 1.0.1) 후 커밋
+git add package.json && git commit -m "release: v1.0.1"
+git push
+
+# 태그를 만들어 푸시 → CI가 빌드+릴리스
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+- `.github/workflows/release.yml` 이 `windows-latest`에서 빌드 → `npm run release`(electron-builder
+  `--publish always`)로 `setup.exe` · `portable.exe` · `latest.yml` 을 해당 태그의 GitHub Release 에 올립니다.
+- 설치본(setup.exe) 사용자는 앱의 **업데이트** 버튼으로 새 버전을 받아 재시작 한 번에 적용됩니다.
+- 첫 릴리스도 동일하게 `git tag v1.0.0 && git push origin v1.0.0` 로 만들면 됩니다.
+
 ## 테스트
 
 ```bash

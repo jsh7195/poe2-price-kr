@@ -1,0 +1,33 @@
+name: release
+
+# v* 태그를 푸시하면(예: v1.0.0) Windows 설치본을 빌드해 GitHub Release 로 게시.
+# 게시된 setup.exe + latest.yml 을 앱의 "업데이트" 버튼이 자동으로 받아갑니다.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # 릴리스 생성/자산 업로드
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build & publish (electron-builder → GitHub Releases)
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
