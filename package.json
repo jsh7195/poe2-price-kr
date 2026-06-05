@@ -24,7 +24,8 @@
     "publish": {
       "provider": "github",
       "owner": "jsh7195",
-      "repo": "poe2-price-kr"
+      "repo": "poe2-price-kr",
+      "releaseType": "release"
     },
     "files": [
       "src/**/*",
