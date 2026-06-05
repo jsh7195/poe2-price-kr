@@ -259,17 +259,25 @@ class Store extends EventEmitter {
     const qEn = normEn(name);
     if (qKr.length < 2 && qEn.length < 2) return null;
     let best = null;
-    let bestScore = 0;
+    let bestAdj = -Infinity;
     for (const rec of this.catalog.records) {
       let s = scoreRecord(rec, qKr, qEn);
+      // OCR 앞뒤 노이즈/잘림 흡수: 쿼리가 아이템명을 포함하는 경우도 인정
       if (rec.krNorm.length >= 3 && qKr.includes(rec.krNorm)) s = Math.max(s, 700);
       if (rec.enNorm.length >= 4 && qEn.includes(rec.enNorm)) s = Math.max(s, 680);
-      if (s > bestScore) {
-        bestScore = s;
+      if (s < 500) continue; // 약한 매칭 제외
+      // 길이 근접 우선: 잘린 이름이 여러 아이템에 포함될 때 가장 가까운 쪽 선택
+      // (예: "하위 정신" → "하위 정신 룬"(diff 1) vs "하위 정신의 에센스"(diff 4))
+      const lenDiff = qKr
+        ? Math.abs(rec.krNorm.length - qKr.length)
+        : Math.abs(rec.enNorm.length - qEn.length);
+      const adj = s - lenDiff * 6;
+      if (adj > bestAdj) {
+        bestAdj = adj;
         best = rec;
       }
     }
-    return bestScore >= 500 ? best : null;
+    return best;
   }
 }
 

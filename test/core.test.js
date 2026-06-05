@@ -167,6 +167,25 @@ test('scanRecipe: 노이즈 매칭 + 수량 + 비싼순 정렬', () => {
   assert.equal(res.items[2].qty, 6);
 });
 
+test('scanRecipe: 잘린 이름은 길이 가까운 아이템으로 매칭', () => {
+  const store = new Store(os.tmpdir());
+  const rec = (kr, en, cat, vDiv) => ({
+    kr, en, krNorm: normKr(kr), enNorm: normEn(en),
+    categoryKey: cat, labelKr: cat, valueDivine: vDiv, valueExalted: vDiv * 80,
+  });
+  store.catalog = {
+    ref: {},
+    records: [
+      rec('하위 정신 룬', 'Lesser Mind Rune', '룬', 0.005),
+      rec('하위 정신의 에센스', 'Lesser Essence of the Mind', '에센스', 0.5),
+    ],
+  };
+  // OCR 이 "룬"을 잘라먹어 "하위 정신"만 읽힌 경우 → 더 가까운 "하위 정신 룬"
+  const res = store.scanRecipe(['1x 하위 정신']);
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].record.en, 'Lesser Mind Rune');
+});
+
 // ---------- catalog dedupe ----------
 function urec(en, baseType, valueDivine, volume, corrupted = false) {
   return {
