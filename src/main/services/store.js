@@ -225,15 +225,24 @@ class Store extends EventEmitter {
   scanRecipe(ocrLines) {
     if (!this.catalog) return { scan: true, items: [], reason: '준비 중' };
     const parsed = parseRecipeLines(ocrLines);
-    const items = [];
-    const seen = new Set();
-    for (const { qty, name } of parsed) {
+    const matched = [];
+    for (const { qty, name, explicit } of parsed) {
       const rec = this._matchOcrName(name);
       if (!rec) continue;
-      const key = rec.categoryKey + '|' + rec.enNorm;
+      matched.push({ qty, explicit, record: rec });
+    }
+    // "Nx" 수량이 붙은 줄이 하나라도 있으면 그 줄들만 사용(조합/목록 화면) →
+    // 화면에 우연히 보이는 다른 아이템 이름(수량 없음)을 걸러낸다.
+    const hasExplicit = matched.some((m) => m.explicit);
+    const chosen = hasExplicit ? matched.filter((m) => m.explicit) : matched;
+
+    const items = [];
+    const seen = new Set();
+    for (const m of chosen) {
+      const key = m.record.categoryKey + '|' + m.record.enNorm;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({ qty, record: rec });
+      items.push({ qty: m.qty, record: m.record });
     }
     items.sort(
       (a, b) => b.qty * (b.record.valueDivine || 0) - a.qty * (a.record.valueDivine || 0)

@@ -132,6 +132,8 @@ test('parseRecipeLines: 수량+이름 추출(OCR 노이즈 허용)', () => {
   assert.equal(p[2].qty, 1); // lx → 1 (OCR 혼동)
   assert.equal(p[3].qty, 1); // 수량 없는 영문도 그대로
   assert.equal(p[3].name, 'Divine Orb');
+  assert.equal(p[0].explicit, true); // "6x" 수량 명시
+  assert.equal(p[3].explicit, false); // 수량 없음
 });
 
 test('scanRecipe: 노이즈 매칭 + 수량 + 비싼순 정렬', () => {
@@ -146,10 +148,19 @@ test('scanRecipe: 노이즈 매칭 + 수량 + 비싼순 정렬', () => {
       rec('카오스 오브', 'Chaos Orb', '화폐', 0.06),
       rec('보호의 합금', 'Protective Alloy', '베리시움', 0.07),
       rec('대장장이의 숫돌', "Blacksmith's Whetstone", '화폐', 0.002),
+      rec('유리직공의 방울', "Glassblower's Bauble", '화폐', 0.02),
     ],
   };
-  const res = store.scanRecipe(['루형티| 조합', '6x 대장장이의 숫돌', '1)(보호의 합금', 'lx 카오스 오브 니']);
-  assert.equal(res.items.length, 3); // 헤더 노이즈는 제외, 3개 매칭
+  // 화면 잡텍스트(수량 없는 "유리직공의 방울")가 섞여도 제외돼야 함
+  const res = store.scanRecipe([
+    '룬형태 조합',
+    '6x 대장장이의 숫돌',
+    '1)(보호의 합금',
+    'lx 카오스 오브 니',
+    '유리직공의 방울',
+  ]);
+  assert.equal(res.items.length, 3); // 수량 없는 잡텍스트 제외
+  assert.ok(!res.items.some((i) => i.record.en === "Glassblower's Bauble"));
   // 합계 비싼 순: 보호의합금(0.07) > 카오스(0.06) > 숫돌(6*0.002=0.012)
   assert.equal(res.items[0].record.en, 'Protective Alloy');
   assert.equal(res.items[2].record.en, "Blacksmith's Whetstone");

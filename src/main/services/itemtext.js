@@ -61,11 +61,13 @@ function parseRecipeLines(lines) {
     if (!line) continue;
     // 선두 수량: 숫자(또는 OCR 혼동 l/I/|/i→1) + 구분자(x/×/)/(/. 등). 구분자 필수.
     let qty = 1;
+    let explicit = false; // 줄 앞에 "Nx" 수량이 실제로 있었는지(조합 목록 식별용)
     const m = line.match(/^\s*([0-9lI|i]{1,3})\s*[x×X*).\(\]\[|·]+\s*/);
     if (m) {
       const n = parseInt(m[1].replace(/[lI|i]/g, '1'), 10);
       if (!isNaN(n) && n > 0 && n < 1000) {
         qty = n;
+        explicit = true;
         line = line.slice(m[0].length);
       }
     }
@@ -74,7 +76,7 @@ function parseRecipeLines(lines) {
     // 이름에 한글/영문 글자가 최소 2자 이상 있어야 함
     const letters = (line.match(/[A-Za-z가-힣]/g) || []).length;
     if (letters < 2) continue;
-    out.push({ qty, name: line });
+    out.push({ qty, name: line, explicit });
   }
   return out;
 }
