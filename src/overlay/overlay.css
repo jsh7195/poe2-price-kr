@@ -1,0 +1,107 @@
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.card {
+  box-sizing: border-box;
+  width: 220px;
+  min-height: 60px;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid #4a3c24;
+  background: linear-gradient(180deg, rgba(26, 22, 16, 0.97), rgba(14, 12, 8, 0.97));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: #ece0c4;
+  animation: pop 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.name {
+  font-size: 12px;
+  color: #b6a988;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 196px;
+}
+
+.rows { display: flex; flex-direction: column; gap: 1px; }
+
+.vrow { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.vrow .num { font-weight: 700; }
+.vrow.primary .num { font-size: 24px; color: #e6c976; line-height: 1.1; }
+.vrow.secondary .num { font-size: 14px; color: #b6a988; }
+.vrow .cic { object-fit: contain; }
+.vrow.primary .cic { width: 22px; height: 22px; }
+.vrow.secondary .cic { width: 16px; height: 16px; }
+.vrow .unit { font-size: 11px; color: #8f8064; }
+
+.change { font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.change.up { color: #84c98a; }
+.change.down { color: #d9836f; }
+
+.noitem {
+  font-size: 17px;
+  font-weight: 600;
+  color: #8f8064;
+  text-align: center;
+  padding: 6px 2px;
+}
+
+/* --- 다중(스캔) 목록 --- */
+.rows.scan { gap: 3px; width: 100%; }
+.scan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 2px;
+  border-bottom: 1px solid rgba(74, 60, 36, 0.45);
+}
+.scan-row:last-child { border-bottom: none; }
+.sr-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.sr-qty { font-size: 12px; color: #c8a94e; font-weight: 700; flex: none; }
+.sr-kr {
+  font-size: 13.5px;
+  color: #ece0c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sr-val { display: flex; align-items: center; gap: 5px; flex: none; font-variant-numeric: tabular-nums; }
+.sr-val .num { font-size: 15px; font-weight: 700; color: #e6c976; }
+.sr-val .cic { width: 16px; height: 16px; }
+.sr-val .unit { font-size: 11px; color: #8f8064; }
+.scan-row:first-child .sr-val .num { color: #f2d98a; }
+
+.cat {
+  display: inline-block;
+  font-size: 10px;
+  color: #c8a94e;
+  background: #2c2415;
+  border: 1px solid #342a1a;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.hidden { display: none; }
+.card .name:empty { display: none; }
+
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+}

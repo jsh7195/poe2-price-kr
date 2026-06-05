@@ -1,0 +1,20 @@
+# dependencies / build output
+node_modules/
+dist/
+out/
+build/
+
+# dev/test artifacts
+.research/
+.playwright-mcp/
+*.log
+*.zip
+
+# editor / tooling
+.claude/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

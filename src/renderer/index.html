@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src https: data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none';" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PoE2 시세검색</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">PoE2</span>
+        <span class="brand-name">시세검색</span>
+      </div>
+      <div class="topbar-right">
+        <label class="field">
+          <span class="field-label">리그</span>
+          <select id="league" class="select" aria-label="리그 선택"></select>
+        </label>
+        <button id="test-overlay" class="btn" title="오버레이 툴팁이 정상 표시되는지 테스트">
+          <span class="btn-icon">◳</span><span>오버레이 테스트</span>
+        </button>
+        <button id="hide-tray" class="btn" title="창을 닫고 트레이에서 계속 실행 (F9·F10 유지)">
+          <span class="btn-icon">▼</span><span>트레이로</span>
+        </button>
+        <button id="refresh" class="btn" title="시세 새로고침">
+          <span class="btn-icon">↻</span><span>갱신</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="searchwrap">
+      <div class="search-shell">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input
+          id="search"
+          class="search"
+          type="text"
+          aria-label="아이템 이름 검색"
+          placeholder="한글 이름으로 검색…   예) 신성한 오브 · 영혼 핵 · 헤드헌터"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          autofocus
+        />
+        <button id="clear" class="search-clear hidden" title="지우기" aria-label="지우기">×</button>
+      </div>
+      <p id="hint" class="hint">
+        한글 이름을 입력하면 <strong>poe.ninja</strong> 시세(divine · exalted)를 바로 보여줍니다.<br />
+        게임에서 아이템 위에 마우스를 올리고 <kbd>F9</kbd> → 커서 옆에 시세 툴팁이 뜹니다.<br />
+        조합·목록 같은 화면은 <kbd>F10</kbd> → 화면을 읽어 보이는 아이템들의 시세를 한 번에 보여줍니다.
+      </p>
+      <div id="admin-hint" class="admin-hint hidden">
+        <span>⚠ 게임이 <strong>관리자 권한</strong>으로 실행 중이면, 이 앱도 관리자 권한이어야 게임 위에서 F9가 동작합니다.</span>
+        <button id="relaunch-admin" class="btn-admin">관리자 권한으로 재실행</button>
+      </div>
+    </section>
+
+    <main id="results" class="results" aria-live="polite"></main>
+
+    <footer class="statusbar">
+      <span id="status-msg" class="status-msg"></span>
+      <span id="status-meta" class="status-meta"></span>
+    </footer>
+
+    <div id="overlay" class="overlay">
+      <div class="spinner" aria-hidden="true"></div>
+      <div id="overlay-msg" class="overlay-msg">데이터 불러오는 중…</div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
