@@ -231,10 +231,9 @@ class Store extends EventEmitter {
       if (!rec) continue;
       matched.push({ qty, explicit, record: rec });
     }
-    // "Nx" 수량이 붙은 줄이 하나라도 있으면 그 줄들만 사용(조합/목록 화면) →
-    // 화면에 우연히 보이는 다른 아이템 이름(수량 없음)을 걸러낸다.
-    const hasExplicit = matched.some((m) => m.explicit);
-    const chosen = hasExplicit ? matched.filter((m) => m.explicit) : matched;
+    // "Nx 아이템" 형식(조합/목록 행)만 채택 → 전체 화면을 스캔해도 목록 밖 텍스트는 제외.
+    // (수량 없이 화면에 보이는 다른 아이템 이름은 explicit=false 라 걸러진다)
+    const chosen = matched.filter((m) => m.explicit);
 
     const items = [];
     const seen = new Set();

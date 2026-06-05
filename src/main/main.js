@@ -2,7 +2,16 @@
 
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require('electron');
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
+
+function logMain(msg) {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'f9-debug.log'), new Date().toISOString() + ' ' + msg + '\n');
+  } catch (_) {
+    /* noop */
+  }
+}
 const { Store } = require('./services/store');
 const { registerIpc } = require('./ipc');
 const { Overlay } = require('./overlay');
@@ -73,18 +82,25 @@ function createWindow(startHidden = false) {
   });
 }
 
-/** 현재 앱을 관리자 권한으로 다시 실행하고 비상승 인스턴스는 종료. */
+/**
+ * 현재 앱을 관리자 권한으로 다시 실행한다.
+ * - 한글 경로 보존: -EncodedCommand(UTF-16).
+ * - 락 경쟁 방지: PowerShell 이 700ms 대기(그 사이 이 앱은 종료) 후 RunAs 실행.
+ * - detached + unref: 이 앱이 종료돼도 PowerShell 은 살아남아 UAC/상승 실행을 진행.
+ */
 function relaunchElevated() {
-  const psQuote = (s) => "'" + String(s).replace(/'/g, "''") + "'";
+  const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
   const exe = process.execPath;
-  const cmd = app.isPackaged
-    ? `Start-Process -FilePath ${psQuote(exe)} -Verb RunAs`
-    : `Start-Process -FilePath ${psQuote(exe)} -ArgumentList ${psQuote(app.getAppPath())} -Verb RunAs`;
-  spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', cmd], {
+  const inner = app.isPackaged
+    ? `Start-Sleep -Milliseconds 700; Start-Process -FilePath ${q(exe)} -Verb RunAs`
+    : `Start-Sleep -Milliseconds 700; Start-Process -FilePath ${q(exe)} -ArgumentList ${q(app.getAppPath())} -Verb RunAs`;
+  const b64 = Buffer.from(inner, 'utf16le').toString('base64');
+  const child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', b64], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
-  }).unref();
+  });
+  child.unref();
 }
 
 function showMainWindow() {
@@ -155,12 +171,14 @@ function start() {
     ipcMain.handle('app:relaunchElevated', () => {
       if (process.platform !== 'win32') return { ok: false };
       try {
-        app.releaseSingleInstanceLock();
+        logMain(`[relaunch] 요청 isPackaged=${app.isPackaged} exe=${process.execPath}`);
         relaunchElevated();
         isQuiting = true;
-        setTimeout(() => app.exit(0), 400);
+        try { app.releaseSingleInstanceLock(); } catch (_) { /* noop */ }
+        setTimeout(() => app.exit(0), 250); // PowerShell 이 700ms 대기하므로 먼저 종료해도 안전
         return { ok: true };
       } catch (e) {
+        logMain('[relaunch] 오류: ' + (e && e.message ? e.message : e));
         return { ok: false, error: String(e && e.message ? e.message : e) };
       }
     });

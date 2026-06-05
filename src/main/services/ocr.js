@@ -20,20 +20,10 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $pos = [System.Windows.Forms.Cursor]::Position
 $scr = [System.Windows.Forms.Screen]::FromPoint($pos)
-$sb = $scr.Bounds
-$rw = 1000
-$rh = 720
-if ($rw -gt $sb.Width) { $rw = $sb.Width }
-if ($rh -gt $sb.Height) { $rh = $sb.Height }
-$rx = $pos.X - [int]($rw / 2)
-$ry = $pos.Y - [int]($rh / 2)
-if ($rx -lt $sb.X) { $rx = $sb.X }
-if ($ry -lt $sb.Y) { $ry = $sb.Y }
-if ($rx + $rw -gt $sb.Right) { $rx = $sb.Right - $rw }
-if ($ry + $rh -gt $sb.Bottom) { $ry = $sb.Bottom - $rh }
-$bmp = New-Object System.Drawing.Bitmap $rw, $rh
+$b = $scr.Bounds
+$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
 $g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($rx, $ry, 0, 0, $bmp.Size)
+$g.CopyFromScreen($b.X, $b.Y, 0, 0, $bmp.Size)
 $tmp = [System.IO.Path]::Combine($env:TEMP, 'poe2_ocr_scan.png')
 $bmp.Save($tmp, [System.Drawing.Imaging.ImageFormat]::Png)
 $g.Dispose(); $bmp.Dispose()
