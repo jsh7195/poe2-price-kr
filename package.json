@@ -23,7 +23,7 @@
     "productName": "PoE2 시세검색",
     "publish": {
       "provider": "github",
-      "owner": "REPLACE_WITH_GITHUB_USERNAME",
+      "owner": "jsh7195",
       "repo": "poe2-price-kr"
     },
     "files": [
