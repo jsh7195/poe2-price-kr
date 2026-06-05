@@ -7,6 +7,7 @@ const { Store } = require('./services/store');
 const { registerIpc } = require('./ipc');
 const { Overlay } = require('./overlay');
 const { setupHotkey, teardownHotkey } = require('./hotkey');
+const { setupUpdater } = require('./updater');
 
 const ASSET = (f) => path.join(__dirname, '..', '..', 'assets', f);
 
@@ -144,6 +145,11 @@ function start() {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
       return { ok: true };
     });
+
+    ipcMain.handle('app:getVersion', () => app.getVersion());
+
+    // GitHub Releases 자동 업데이트 (설치본 전용)
+    setupUpdater(() => mainWindow);
 
     // 관리자 권한으로 재실행(비상승 → 상승). UAC 수락 시 상승 인스턴스가 락을 인수.
     ipcMain.handle('app:relaunchElevated', () => {

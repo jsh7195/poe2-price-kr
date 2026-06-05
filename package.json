@@ -11,7 +11,8 @@
     "test": "node --test test/",
     "smoke": "node scripts/smoke.js",
     "dist": "electron-builder --win",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "release": "electron-builder --win --publish always"
   },
   "devDependencies": {
     "electron": "^33.3.1",
@@ -20,6 +21,11 @@
   "build": {
     "appId": "com.jsh71.poe2pricekr",
     "productName": "PoE2 시세검색",
+    "publish": {
+      "provider": "github",
+      "owner": "REPLACE_WITH_GITHUB_USERNAME",
+      "repo": "poe2-price-kr"
+    },
     "files": [
       "src/**/*",
       "assets/**/*",
@@ -40,5 +46,8 @@
       "allowToChangeInstallationDirectory": true,
       "artifactName": "PoE2-Price-KR-${version}-setup.${ext}"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
   }
 }

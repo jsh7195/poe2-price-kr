@@ -192,6 +192,25 @@ body {
 }
 .btn-admin:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .btn-admin:disabled { opacity: 0.6; cursor: default; transform: none; }
+
+.update-bar {
+  max-width: 720px;
+  margin: 10px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: rgba(200, 169, 78, 0.08);
+  border: 1px solid rgba(200, 169, 78, 0.32);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+}
+.update-bar strong { color: var(--gold-bright); }
+
+.app-version { margin-left: 10px; color: var(--muted-2); }
 .hidden { display: none !important; }
 
 /* ---------- Results ---------- */

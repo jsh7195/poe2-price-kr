@@ -15,6 +15,15 @@ contextBridge.exposeInMainWorld('api', {
   testOverlay: () => ipcRenderer.invoke('overlay:test'),
   relaunchElevated: () => ipcRenderer.invoke('app:relaunchElevated'),
   hideToTray: () => ipcRenderer.invoke('app:hideToTray'),
+  getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (callback) => {
+    const listener = (_evt, status) => callback(status);
+    ipcRenderer.on('update:status', listener);
+    return () => ipcRenderer.removeListener('update:status', listener);
+  },
   /** 메인이 보내는 상태 갱신 구독. 해제 함수를 반환. */
   onStatus: (callback) => {
     const listener = (_evt, status) => callback(status);

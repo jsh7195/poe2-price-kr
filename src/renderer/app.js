@@ -8,6 +8,11 @@ const el = {
   refresh: $('refresh'),
   testOverlay: $('test-overlay'),
   hideTray: $('hide-tray'),
+  checkUpdate: $('check-update'),
+  updateBar: $('update-bar'),
+  updateMsg: $('update-msg'),
+  updateAction: $('update-action'),
+  appVersion: $('app-version'),
   adminHint: $('admin-hint'),
   relaunchAdmin: $('relaunch-admin'),
   search: $('search'),
@@ -294,6 +299,47 @@ setInterval(() => {
     }
   });
 }, 30000);
+
+// ---------- 자동 업데이트 ----------
+let updateHideTimer = null;
+function applyUpdate(s) {
+  if (!s || !s.state) return;
+  const act = el.updateAction;
+  act.classList.add('hidden');
+  act.onclick = null;
+  let text = '';
+  let actionLabel = '';
+  let actionFn = null;
+  let autoHide = false;
+  switch (s.state) {
+    case 'checking': text = '업데이트 확인 중…'; break;
+    case 'latest': text = `최신 버전입니다 (v${s.version || ''})`; autoHide = true; break;
+    case 'available':
+      text = `새 버전 v${s.version} 이(가) 있습니다.`;
+      actionLabel = '다운로드'; actionFn = () => window.api.downloadUpdate();
+      break;
+    case 'downloading': text = `다운로드 중… ${s.percent || 0}%`; break;
+    case 'downloaded':
+      text = `v${s.version} 다운로드 완료.`;
+      actionLabel = '재시작하여 적용'; actionFn = () => window.api.installUpdate();
+      break;
+    case 'unsupported': text = '자동 업데이트는 설치 버전(setup.exe)에서만 동작합니다.'; autoHide = true; break;
+    case 'error': text = '업데이트 확인 실패: ' + (s.message || '알 수 없는 오류'); autoHide = true; break;
+    default: return;
+  }
+  el.updateMsg.textContent = text;
+  if (actionLabel && actionFn) {
+    act.textContent = actionLabel;
+    act.onclick = actionFn;
+    act.classList.remove('hidden');
+  }
+  el.updateBar.classList.remove('hidden');
+  clearTimeout(updateHideTimer);
+  if (autoHide) updateHideTimer = setTimeout(() => el.updateBar.classList.add('hidden'), 6000);
+}
+el.checkUpdate.addEventListener('click', () => window.api.checkUpdate());
+window.api.onUpdateStatus(applyUpdate);
+window.api.getVersion().then((v) => { if (v) el.appVersion.textContent = 'v' + v; });
 
 // ---------- 시작 ----------
 window.api.onStatus(applyStatus);
