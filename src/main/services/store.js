@@ -10,6 +10,7 @@ const { search, scoreRecord } = require('./search');
 const { normKr, normEn } = require('./normalize');
 const { extractItemName, parseRecipeLines } = require('./itemtext');
 const { isElevated } = require('./elevation');
+const errorReport = require('./errorReport');
 
 /**
  * 앱의 데이터 상태 보관소.
@@ -78,6 +79,10 @@ class Store extends EventEmitter {
   _emit(phase, message) {
     if (phase) this.phase = phase;
     if (message != null) this.lastMessage = message;
+    // 가격 조회 실패는 모두 이 choke point를 통과한다 → 자동 신고용 버퍼에 적재.
+    if (phase === 'error') {
+      errorReport.record({ message, league: this.selectedLeague });
+    }
     this.emit('status', this.status());
   }
 

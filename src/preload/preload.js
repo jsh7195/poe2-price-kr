@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   search: (query) => ipcRenderer.invoke('catalog:search', query),
   refresh: () => ipcRenderer.invoke('catalog:refresh'),
   setLeague: (name) => ipcRenderer.invoke('league:set', name),
+  reportError: (payload) => ipcRenderer.invoke('app:reportError', payload),
   testOverlay: () => ipcRenderer.invoke('overlay:test'),
   relaunchElevated: () => ipcRenderer.invoke('app:relaunchElevated'),
   hideToTray: () => ipcRenderer.invoke('app:hideToTray'),

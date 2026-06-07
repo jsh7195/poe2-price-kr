@@ -6,7 +6,6 @@ const $ = (id) => document.getElementById(id);
 const el = {
   league: $('league'),
   refresh: $('refresh'),
-  testOverlay: $('test-overlay'),
   hideTray: $('hide-tray'),
   checkUpdate: $('check-update'),
   updateBar: $('update-bar'),
@@ -20,6 +19,7 @@ const el = {
   hint: $('hint'),
   results: $('results'),
   statusMsg: $('status-msg'),
+  reportError: $('report-error'),
   statusMeta: $('status-meta'),
   overlay: $('overlay'),
   overlayMsg: $('overlay-msg'),
@@ -28,6 +28,7 @@ const el = {
 let ref = null; // 기준 통화(divine/exalted 아이콘)
 let lastLeaguesKey = '';
 let currentQuery = '';
+let lastStatus = null; // 신고 버튼이 참조할 최근 상태(메시지·카테고리 오류)
 
 // ---------- 포맷 유틸 ----------
 function fmtNum(n) {
@@ -219,6 +220,7 @@ function onInput() {
 function applyStatus(s) {
   if (!s) return;
   ref = s.ref || ref;
+  lastStatus = s;
 
   // 리그 드롭다운(목록 바뀔 때만 재구성)
   const leaguesKey = (s.leagues || []).map((l) => l.name).join('|');
@@ -259,6 +261,10 @@ function applyStatus(s) {
   } else {
     el.statusMsg.textContent = s.message || '';
   }
+  // 가격 조회 실패(전체 실패 또는 일부 카테고리 실패) 시에만 "버그 신고" 버튼 노출
+  const hasFailure = s.phase === 'error' || !!(s.errors && s.errors.length);
+  el.reportError.classList.toggle('hidden', !hasFailure);
+
   const parts = [];
   if (s.count) parts.push(`${s.count.toLocaleString()}개 아이템`);
   if (s.updatedAt) parts.push(`업데이트 ${timeAgo(s.updatedAt)}`);
@@ -275,12 +281,24 @@ function applyStatus(s) {
 el.search.addEventListener('input', onInput);
 el.clear.addEventListener('click', () => { el.search.value = ''; el.search.focus(); doSearch(); });
 el.refresh.addEventListener('click', () => { if (!el.refresh.disabled) window.api.refresh(); });
-el.testOverlay.addEventListener('click', () => { window.api.testOverlay(); });
 el.hideTray.addEventListener('click', () => { window.api.hideToTray(); });
 el.relaunchAdmin.addEventListener('click', () => {
   el.relaunchAdmin.textContent = '재실행 중…';
   el.relaunchAdmin.disabled = true;
   window.api.relaunchElevated();
+});
+el.reportError.addEventListener('click', () => {
+  const s = lastStatus || {};
+  const message = (s.phase === 'error' ? s.message : '') || el.statusMsg.textContent || '';
+  el.reportError.disabled = true;
+  const done = () => { el.reportError.disabled = false; };
+  window.api
+    .reportError({ message, errors: s.errors || [] })
+    .then((res) => {
+      if (res && res.ok) el.statusMsg.textContent = '브라우저에서 신고 페이지를 열었습니다 — 내용 확인 후 제출해 주세요.';
+      done();
+    })
+    .catch(done);
 });
 el.league.addEventListener('change', () => { window.api.setLeague(el.league.value); });
 document.addEventListener('keydown', (e) => {

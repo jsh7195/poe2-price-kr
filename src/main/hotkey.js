@@ -107,14 +107,14 @@ async function runScan(store, overlay) {
   }
   overlay.hide(); // 오버레이가 캡처에 찍히지 않도록
   try {
-    const { lines, noLang } = await scanScreen();
+    const { lines, noLang, dim } = await scanScreen();
     if (noLang) {
       dbg('[F10] OCR 언어(한글) 없음');
       overlay.show(screen.getCursorScreenPoint(), { scan: true, items: [], reason: '한글 OCR 없음' });
       return;
     }
     const res = store.scanRecipe(lines);
-    dbg(`[F10] scan lines=${lines.length} matched=${res.items.length}`);
+    dbg(`[F10] scan ${dim || '?'} lines=${lines.length} matched=${res.items.length}`);
     overlay.show(screen.getCursorScreenPoint(), res);
   } catch (e) {
     dbg('[F10] scan 실패: ' + (e && e.message ? e.message : e));

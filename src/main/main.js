@@ -13,6 +13,7 @@ function logMain(msg) {
   }
 }
 const { Store } = require('./services/store');
+const { redact } = require('./services/redact');
 const { registerIpc } = require('./ipc');
 const { Overlay } = require('./overlay');
 const { setupHotkey, teardownHotkey } = require('./hotkey');
@@ -145,6 +146,18 @@ function rebuildTrayMenu() {
 function start() {
   app.whenReady().then(async () => {
     store = new Store(app.getPath('userData'));
+
+    // 시세 조회 실패를 디스크 로그(f9-debug.log)에 영구 기록 → 게임 중 문제 발생 후 원인 분석용.
+    // (개인정보는 redact 로 가리고, 같은 메시지 연속 반복은 한 번만 기록)
+    let lastLoggedError = '';
+    store.on('status', (s) => {
+      if (s && s.phase === 'error' && s.message && s.message !== lastLoggedError) {
+        lastLoggedError = s.message;
+        logMain('[price-error]' + (s.leagueName ? ' [' + redact(s.leagueName) + ']' : '') + ' ' + redact(s.message));
+      } else if (s && s.phase === 'ready') {
+        lastLoggedError = ''; // 복구되면 다음 실패를 다시 기록할 수 있도록 리셋
+      }
+    });
 
     overlay = new Overlay();
     overlay.create();

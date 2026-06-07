@@ -1,6 +1,11 @@
 'use strict';
 
-const { ipcMain, screen } = require('electron');
+const { ipcMain, screen, shell, app } = require('electron');
+const { redact } = require('./services/redact');
+const errorReport = require('./services/errorReport');
+
+// 공개 배포 리포(시크릿 아님 — 자동 신고가 향할 곳).
+const REPORT_REPO = { owner: 'jsh7195', repo: 'poe2-price-kr' };
 
 /**
  * 렌더러 ↔ 메인 IPC 핸들러 등록.
@@ -39,6 +44,36 @@ function registerIpc(store, overlay) {
     }
     await store.setLeague(name);
     return store.status();
+  });
+
+  // 가격 조회 실패를 GitHub 이슈로 신고: 마스킹된 본문을 만들어 기본 브라우저로 프리필 새 이슈를 연다.
+  // (토큰 0 — 사용자가 본인 GitHub 로그인으로 직접 Submit. 본문은 redact() 통과분만 포함.)
+  ipcMain.handle('app:reportError', async (_evt, payload) => {
+    try {
+      const message = payload && typeof payload.message === 'string' ? payload.message : '';
+      const categoryErrors = payload && Array.isArray(payload.errors) ? payload.errors : [];
+      const recent = errorReport.dump();
+      const seedMsg = message || (recent.length ? recent[recent.length - 1].message : '');
+      const body = errorReport.buildIssueBody({
+        version: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch,
+        league: store.selectedLeague,
+        recent,
+        categoryErrors,
+      });
+      const url = errorReport.buildIssueUrl({
+        owner: REPORT_REPO.owner,
+        repo: REPORT_REPO.repo,
+        title: errorReport.buildTitle(seedMsg),
+        labels: 'price-fail',
+        body,
+      });
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: redact(String(e && e.message ? e.message : e)) };
+    }
   });
 }
 

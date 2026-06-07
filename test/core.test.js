@@ -10,6 +10,8 @@ const { search } = require('../src/main/services/search');
 const { toRecord, dedupe } = require('../src/main/services/catalog');
 const { extractItemName, looksLikeItem, parseRecipeLines } = require('../src/main/services/itemtext');
 const { Store } = require('../src/main/services/store');
+const { redact } = require('../src/main/services/redact');
+const errorReport = require('../src/main/services/errorReport');
 const os = require('node:os');
 
 // ---------- normalize ----------
@@ -241,4 +243,85 @@ test('toRecord: 사전에 없으면 영문 폴백', () => {
   const r2 = toRecord({ en: 'Divine Orb', value: { divine: 1, exalted: 80 }, icon: '' }, cat, { [normEn('Divine Orb')]: '신성한 오브' });
   assert.equal(r2.kr, '신성한 오브');
   assert.equal(r2.valueExalted, 80);
+});
+
+// ---------- redact (민감정보 마스킹) ----------
+test('redact: Windows 사용자명 마스킹, 이후 경로는 유지', () => {
+  assert.equal(
+    redact('실패: C:\\Users\\jsh71\\AppData\\Local\\app.exe 없음'),
+    '실패: C:\\Users\\<user>\\AppData\\Local\\app.exe 없음'
+  );
+  // 드라이브 없는 \Users\ 경로도 마스킹
+  assert.equal(redact('\\Users\\bob\\x'), '\\Users\\<user>\\x');
+});
+test('redact: 일반 텍스트·null 안전', () => {
+  assert.equal(redact('fetch failed (503)'), 'fetch failed (503)');
+  assert.equal(redact(null), '');
+  assert.equal(redact(undefined), '');
+});
+
+// ---------- errorReport (실패 버퍼 + 프리필 이슈) ----------
+test('errorReport.record: 연속 중복 억제 + 마스킹', () => {
+  errorReport.clear();
+  errorReport.record({ ts: 't1', message: 'C:\\Users\\jsh71\\a 실패', league: 'Std' });
+  errorReport.record({ ts: 't2', message: 'C:\\Users\\jsh71\\a 실패', league: 'Std' }); // 직전과 동일 → 무시
+  errorReport.record({ ts: 't3', message: '다른 실패', league: 'Std' });
+  const d = errorReport.dump();
+  assert.equal(d.length, 2);
+  assert.equal(d[0].message, 'C:\\Users\\<user>\\a 실패'); // 사용자명 마스킹됨
+  assert.equal(d[1].message, '다른 실패');
+});
+test('errorReport.record: 링버퍼 최대 길이 유지', () => {
+  errorReport.clear();
+  for (let i = 0; i < errorReport.MAX_ENTRIES + 5; i++) {
+    errorReport.record({ ts: 't' + i, message: 'fail ' + i });
+  }
+  const d = errorReport.dump();
+  assert.equal(d.length, errorReport.MAX_ENTRIES);
+  assert.equal(d[d.length - 1].message, 'fail ' + (errorReport.MAX_ENTRIES + 4)); // 최신 유지
+});
+test('errorReport.dump: 불변 복사본(외부 변형이 버퍼에 영향 없음)', () => {
+  errorReport.clear();
+  errorReport.record({ ts: 't1', message: 'x' });
+  const d = errorReport.dump();
+  d[0].message = 'mutated';
+  assert.equal(errorReport.dump()[0].message, 'x');
+});
+test('errorReport.buildIssueBody: 환경·최근로그·카테고리오류 포함 + 마스킹', () => {
+  const body = errorReport.buildIssueBody({
+    version: '1.0.5',
+    platform: 'win32',
+    arch: 'x64',
+    league: 'Standard',
+    recent: [{ ts: 't1', message: 'C:\\Users\\jsh71\\x 실패', league: 'Standard' }],
+    categoryErrors: [{ category: 'currency', message: 'HTTP 503' }],
+  });
+  assert.ok(body.includes('1.0.5'));
+  assert.ok(body.includes('win32'));
+  assert.ok(body.includes('HTTP 503'));
+  assert.ok(body.includes('C:\\Users\\<user>\\x 실패')); // 마스킹 적용
+  assert.ok(!body.includes('jsh71')); // 사용자명 누출 없음
+});
+test('errorReport.buildIssueUrl/buildTitle: 프리필 URL 형태', () => {
+  const url = errorReport.buildIssueUrl({
+    owner: 'jsh7195',
+    repo: 'poe2-price-kr',
+    title: errorReport.buildTitle('데이터 로드 실패: fetch failed'),
+    labels: 'price-fail',
+    body: 'hello world',
+  });
+  assert.ok(url.startsWith('https://github.com/jsh7195/poe2-price-kr/issues/new?'));
+  assert.ok(url.includes('labels=price-fail'));
+  assert.ok(url.includes('body=hello%20world'));
+  assert.ok(url.includes(encodeURIComponent('[price-fail]')));
+});
+test('errorReport.buildIssueUrl: 한글 대용량 본문도 인코딩 길이 기준으로 제한', () => {
+  const hugeKorean = '가'.repeat(20000); // 인코딩 시 ~3배(%EA%B0%80)로 폭증
+  const url = errorReport.buildIssueUrl({
+    owner: 'o', repo: 'r', body: hugeKorean,
+  });
+  const bodyParam = url.split('body=')[1] || '';
+  assert.ok(bodyParam.length <= 6100, `encoded body too long: ${bodyParam.length}`);
+  // 잘린 본문도 유효한 인코딩이어야 함(디코드가 throw 하지 않음)
+  assert.doesNotThrow(() => decodeURIComponent(bodyParam));
 });

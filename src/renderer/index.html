@@ -19,9 +19,6 @@
           <span class="field-label">리그</span>
           <select id="league" class="select" aria-label="리그 선택"></select>
         </label>
-        <button id="test-overlay" class="btn" title="오버레이 툴팁이 정상 표시되는지 테스트">
-          <span class="btn-icon">◳</span><span>오버레이 테스트</span>
-        </button>
         <button id="hide-tray" class="btn" title="창을 닫고 트레이에서 계속 실행 (F9·F10 유지)">
           <span class="btn-icon">▼</span><span>트레이로</span>
         </button>
@@ -69,7 +66,10 @@
     <main id="results" class="results" aria-live="polite"></main>
 
     <footer class="statusbar">
-      <span id="status-msg" class="status-msg"></span>
+      <span class="status-left">
+        <span id="status-msg" class="status-msg"></span>
+        <button id="report-error" class="btn-report hidden" title="이 오류 로그를 GitHub에 신고합니다">⚠ 버그 신고</button>
+      </span>
       <span class="status-meta"><span id="status-meta"></span><span id="app-version" class="app-version"></span></span>
     </footer>
 
