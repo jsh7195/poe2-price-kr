@@ -324,11 +324,21 @@ function gggCategoryId(krClass) {
   return KR_CLASS_TO_CATEGORY[krClass.trim()] || null;
 }
 
-/** stats(+선택적 category) → trade2 query 객체.
- *  status: 'any' = 온라인+오프라인 모두(거래가 아니라 가치 평가 → 접속 여부 무관). */
-function buildStatQuery(statFilters, category) {
-  const query = { status: { option: 'any' }, stats: [{ type: 'and', filters: statFilters }] };
-  if (category) query.filters = { type_filters: { filters: { category: { option: category } } } };
+/** stats/카테고리/희귀도/아이템레벨 → trade2 query 객체.
+ *  status:'any' = 온라인+오프라인(가치 평가 → 접속 무관). opts:{category, rarity, ilvl}.
+ *  옵션(stats) 없이 카테고리만으로도 검색 가능(베이스 아이템). */
+function buildStatQuery(statFilters, opts = {}) {
+  const query = { status: { option: 'any' } };
+  if (Array.isArray(statFilters) && statFilters.length) {
+    query.stats = [{ type: 'and', filters: statFilters }];
+  }
+  const typeFilters = {};
+  if (opts.category) typeFilters.category = { option: opts.category };
+  if (opts.rarity) typeFilters.rarity = { option: opts.rarity };
+  const filters = {};
+  if (Object.keys(typeFilters).length) filters.type_filters = { filters: typeFilters };
+  if (opts.ilvl) filters.misc_filters = { filters: { ilvl: { min: Number(opts.ilvl) } } };
+  if (Object.keys(filters).length) query.filters = filters;
   return query;
 }
 
@@ -368,10 +378,12 @@ async function _priceFromSearch(league, sres) {
  * @returns {Promise<null | {exalted, divine, min, listingCount, sampled, searchUrl, empty?:boolean}>}
  */
 async function priceByStatFilters(league, statFilters, opts = {}) {
-  if (!league || !Array.isArray(statFilters) || !statFilters.length) return null;
+  const hasStats = Array.isArray(statFilters) && statFilters.length > 0;
+  // 옵션(stats) 또는 카테고리 둘 중 하나는 있어야 검색(베이스 아이템은 카테고리+ilvl 만).
+  if (!league || (!hasStats && !opts.category)) return null;
   // 선택한 옵션 "그대로" 단일 검색. 자동 완화 없음 — 매물 없으면 없는 대로 정직하게 보여준다
   // (중요 옵션을 빼고 싼 값을 보여주면 아이템 가치 평가가 왜곡되므로).
-  const body = { query: buildStatQuery(statFilters, opts.category), sort: { price: 'asc' } };
+  const body = { query: buildStatQuery(hasStats ? statFilters : [], opts), sort: { price: 'asc' } };
   let sres = null;
   try {
     sres = await search(league, body);
@@ -439,7 +451,7 @@ async function priceByMods(league, item, statIndex, opts = {}) {
   }
   if (!matched.length) return null;
   const filters = matched.map((f) => ({ id: f.id, value: statFilterValue(f.values) }));
-  const res = await priceByStatFilters(league, filters, { category: opts.category });
+  const res = await priceByStatFilters(league, filters, opts);
   if (!res) return null;
   return { ...res, usedMods: matched.map((m) => m.clean), totalExplicit: matched.length };
 }

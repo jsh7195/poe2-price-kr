@@ -158,12 +158,13 @@ async function runPricer(store, overlay, pricer) {
     return;
   }
   const item = await store.inspectItem(text);
-  if (!item || !item.mods || !item.mods.length) {
-    dbg(`[ShiftF9] 옵션 없음 rarity=${item ? item.rarity : '?'}`);
-    overlay.show(point, { found: false, reason: '옵션 아이템 아님' });
+  // 장비(카테고리 있음)면 옵션이 없어도(일반/베이스) 타입+아이템레벨로 시세 조회 가능.
+  if (!item || (!item.mods.length && !item.categoryId)) {
+    dbg(`[ShiftF9] 장비 아님 rarity=${item ? item.rarity : '?'}`);
+    overlay.show(point, { found: false, reason: '장비 아님' });
     return;
   }
-  dbg(`[ShiftF9] fired rarity=${item.rarity} mods=${item.mods.length}`);
+  dbg(`[ShiftF9] fired rarity=${item.rarity} mods=${item.mods.length} cat=${item.categoryId || '-'}`);
   overlay.hide(); // 빠른 로딩 오버레이 닫고 인터랙티브 창으로
   pricer.show(point, item);
 }

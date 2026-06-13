@@ -13,6 +13,10 @@ let currentMods = []; // [{cb, minEl, id, matched, text}]
 let currentItem = null;
 let lastFilters = [];
 let currencyIcons = {}; // 통화 id → 아이콘 URL
+let ilvlCb = null; // 아이템 레벨 필터 체크박스
+let ilvlEl = null; // 아이템 레벨 최소 입력
+
+const RARITY_OPT = { normal: 'normal', magic: 'magic', rare: 'rare' };
 
 const AFFIX_LABEL = { implicit: '고정', prefix: '접두', suffix: '접미', explicit: '비고정', rune: '룬', crafted: '제작', enchant: '인챈트' };
 
@@ -50,6 +54,38 @@ function renderItem(item) {
   itemSubEl.textContent = bits.join(' · ');
 
   modsEl.replaceChildren();
+
+  // 아이템 레벨 필터(베이스/일반 아이템에 특히 유용 — 높은 ilvl 베이스가 비쌈). 항상 맨 위.
+  const matchedCount = (item.mods || []).filter((m) => m.matched).length;
+  ilvlCb = document.createElement('input');
+  ilvlCb.type = 'checkbox';
+  ilvlCb.checked = matchedCount === 0 && !!item.itemLevel; // 옵션 없으면(베이스) 기본 ON
+  ilvlEl = document.createElement('input');
+  ilvlEl.className = 'mod-min';
+  ilvlEl.type = 'number';
+  ilvlEl.value = item.itemLevel || '';
+  ilvlEl.title = '아이템 레벨 최소';
+  const ilvlRow = document.createElement('div');
+  ilvlRow.className = 'mod ilvl-row';
+  const ilvlBody = document.createElement('div');
+  ilvlBody.className = 'mod-body';
+  const ilvlTxt = document.createElement('div');
+  ilvlTxt.className = 'mod-text';
+  const ilvlTag = document.createElement('span');
+  ilvlTag.className = 'mod-tag';
+  ilvlTag.textContent = 'ilvl';
+  ilvlTxt.append(ilvlTag, document.createTextNode('아이템 레벨 이상'));
+  ilvlBody.appendChild(ilvlTxt);
+  ilvlRow.append(ilvlCb, ilvlBody, ilvlEl);
+  modsEl.appendChild(ilvlRow);
+
+  if (matchedCount === 0) {
+    const note = document.createElement('div');
+    note.className = 'base-note';
+    note.textContent = '옵션 없음 — 타입(+아이템 레벨)으로 베이스 시세를 검색합니다.';
+    modsEl.appendChild(note);
+  }
+
   for (const m of item.mods || []) {
     const row = document.createElement('div');
     row.className = 'mod' + (m.matched ? '' : ' disabled');
@@ -100,6 +136,16 @@ function chosenMods() {
   return currentMods.filter((m) => m.matched && m.cb.checked);
 }
 
+function searchOpts(filterCount) {
+  const ilvlOn = ilvlCb && ilvlCb.checked && ilvlEl && ilvlEl.value !== '';
+  return {
+    category: currentItem ? currentItem.categoryId : undefined,
+    ilvl: ilvlOn ? Number(ilvlEl.value) : undefined,
+    // 옵션 없이 베이스 검색 시엔 같은 등급(일반/매직)으로 좁힌다.
+    rarity: filterCount === 0 && currentItem ? RARITY_OPT[currentItem.rarity] : undefined,
+  };
+}
+
 async function runSearch() {
   const chosen = chosenMods();
   const filters = chosen.map((m) => ({
@@ -107,13 +153,14 @@ async function runSearch() {
     min: m.minEl && m.minEl.value !== '' ? Number(m.minEl.value) : undefined,
   }));
   lastFilters = filters;
-  // 직전 "제외" 표시 초기화
+  const opts = searchOpts(filters.length);
   currentMods.forEach((m) => m.row && m.row.classList.remove('dropped'));
   resultEl.replaceChildren();
-  if (!filters.length) {
+  // 옵션도 없고 타입필터도 없으면 검색 불가.
+  if (!filters.length && !opts.category) {
     const e = document.createElement('div');
     e.className = 'empty';
-    e.textContent = '옵션을 하나 이상 선택하세요.';
+    e.textContent = '옵션을 선택하거나 타입을 인식할 수 없습니다.';
     resultEl.appendChild(e);
     return;
   }
@@ -125,7 +172,7 @@ async function runSearch() {
 
   let res = null;
   try {
-    res = await window.pricerApi.price(filters, currentItem ? currentItem.categoryId : null);
+    res = await window.pricerApi.price(filters, opts);
   } catch (e) {
     res = null;
   }
@@ -155,7 +202,12 @@ function renderResult(res, nFilters) {
     e.className = 'empty';
     e.textContent = '이 조건의 매물이 없습니다. 옵션을 줄이거나 최소값을 낮춰보세요.';
     resultEl.appendChild(e);
-    if (res.searchUrl) resultEl.appendChild(glink(res.searchUrl));
+    // 매물이 없어도 검색 조건을 즐겨찾기에 담아 메인창에서 추적 가능하게.
+    const actions = document.createElement('div');
+    actions.className = 'res-actions';
+    if (res.searchUrl) actions.appendChild(glink(res.searchUrl));
+    actions.appendChild(favBtn(res));
+    resultEl.appendChild(actions);
     return;
   }
   // 최저가 매물 원본 통화 + 아이콘으로 표시(환율 변환 없음).
@@ -169,7 +221,8 @@ function renderResult(res, nFilters) {
 
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.append(`옵션 ${nFilters}개 · 매물 ${res.listingCount >= 100 ? '100+' : res.listingCount}개`);
+  const head = nFilters === 0 ? '베이스 시세' : `옵션 ${nFilters}개`;
+  sub.append(`${head} · 매물 ${res.listingCount >= 100 ? '100+' : res.listingCount}개`);
   const lows = (res.low || []).slice(0, 5);
   if (lows.length) {
     sub.append('  ·  최저 ');
@@ -230,11 +283,14 @@ function favBtn(res) {
   b.textContent = '⭐ 즐겨찾기';
   b.addEventListener('click', async () => {
     const mods = currentMods.filter((m) => m.matched && m.cb.checked).map((m) => m.text);
+    const opts = searchOpts(lastFilters.length);
     try {
       await window.pricerApi.addFavorite({
         name: currentItem ? currentItem.name : '',
         base: currentItem ? currentItem.base : '',
-        categoryId: currentItem ? currentItem.categoryId : null,
+        categoryId: opts.category || null,
+        ilvl: opts.ilvl || null,
+        rarity: opts.rarity || null,
         filters: lastFilters,
         mods,
         price: {

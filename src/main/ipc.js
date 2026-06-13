@@ -16,10 +16,10 @@ function registerIpc(store, overlay, pricer) {
 
   // --- 인터랙티브 옵션 시세 창(Shift+F9) ---
   // 선택한 옵션 필터로 동급이상 실시세.
-  ipcMain.handle('pricer:price', async (_evt, filters, category) => {
+  ipcMain.handle('pricer:price', async (_evt, filters, opts) => {
     try {
       if (!Array.isArray(filters)) return null;
-      return await store.priceByFilters(filters, category);
+      return await store.priceByFilters(filters, opts || {});
     } catch (e) {
       return null;
     }

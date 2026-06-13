@@ -330,12 +330,13 @@ class Store extends EventEmitter {
   }
 
   /**
-   * 인터랙티브: 사용자가 고른 옵션(필터)으로 동급이상 실시세.
+   * 인터랙티브: 고른 옵션(필터)으로 동급이상 실시세. 옵션 없이 카테고리/아이템레벨만으로도 검색(베이스).
    * @param {Array<{id:string, min?:number, max?:number}>} picks
+   * @param {{category?:string, ilvl?:number, rarity?:string}} [opts]
    */
-  async priceByFilters(picks, category) {
-    if (!this.selectedLeague || !Array.isArray(picks) || !picks.length) return null;
-    const filters = picks
+  async priceByFilters(picks, opts = {}) {
+    if (!this.selectedLeague) return null;
+    const filters = (Array.isArray(picks) ? picks : [])
       .filter((p) => p && p.id)
       .map((p) => {
         const value = {};
@@ -343,8 +344,9 @@ class Store extends EventEmitter {
         if (p.max != null && p.max !== '') value.max = Number(p.max);
         return { id: p.id, value: Object.keys(value).length ? value : undefined };
       });
+    if (!filters.length && !opts.category) return null;
     try {
-      return await ggg.priceByStatFilters(this.selectedLeague, filters, { category: category || undefined });
+      return await ggg.priceByStatFilters(this.selectedLeague, filters, opts || {});
     } catch (e) {
       return null;
     }
@@ -411,18 +413,21 @@ class Store extends EventEmitter {
     return this._saveFavorites([...list, fav]);
   }
 
-  /** 레어(옵션 선택) 검색을 즐겨찾기에 추가. data:{name,base,filters:[{id,min}],mods:[text],price} */
+  /** 레어(옵션) 또는 베이스(옵션 없이 타입+ilvl) 검색을 즐겨찾기에 추가.
+   *  data:{name,base,categoryId,ilvl,rarity,filters:[{id,min}],mods:[text],price} */
   async addRareFavorite(data) {
-    if (!data || !Array.isArray(data.filters) || !data.filters.length) return this.getFavorites();
-    const sig = data.filters.map((f) => f.id + ':' + (f.min != null ? f.min : '')).sort().join(',');
+    const hasFilters = data && Array.isArray(data.filters) && data.filters.length;
+    if (!data || (!hasFilters && !data.categoryId)) return this.getFavorites();
+    const fsig = (data.filters || []).map((f) => f.id + ':' + (f.min != null ? f.min : '')).sort().join(',');
+    const sig = fsig + '|il' + (data.ilvl || '') + '|r' + (data.rarity || '');
     const key = 'rare:' + (data.base || data.name || '') + '|' + sig;
     const list = await this.getFavorites();
     if (list.some((f) => f.key === key)) return list;
     const fav = {
       key, kind: 'rare',
       kr: data.base || data.name || '레어', en: data.name || '', base: data.base || '',
-      categoryId: data.categoryId || null,
-      filters: data.filters, mods: Array.isArray(data.mods) ? data.mods : [],
+      categoryId: data.categoryId || null, ilvl: data.ilvl || null, rarity: data.rarity || null,
+      filters: data.filters || [], mods: Array.isArray(data.mods) ? data.mods : [],
       lastPrice: data.price || null, savedAt: Date.now(),
     };
     return this._saveFavorites([...list, fav]);
@@ -443,8 +448,10 @@ class Store extends EventEmitter {
       if (fav.kind === 'catalog') {
         price = await this._priceRecord(fav.rec);
       } else {
-        const filters = fav.filters.map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
-        price = await ggg.priceByStatFilters(this.selectedLeague, filters, { category: fav.categoryId || undefined });
+        const filters = (fav.filters || []).map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
+        price = await ggg.priceByStatFilters(this.selectedLeague, filters, {
+          category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined, rarity: fav.rarity || undefined,
+        });
       }
     } catch (e) {
       /* 실패 → 기존 값 유지 */

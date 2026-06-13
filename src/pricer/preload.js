@@ -12,8 +12,8 @@ contextBridge.exposeInMainWorld('pricerApi', {
     ipcRenderer.on('pricer:item', listener);
     return () => ipcRenderer.removeListener('pricer:item', listener);
   },
-  /** 선택한 옵션 필터로 시세 조회. filters: [{id, min?, max?}], category: GGG 카테고리 id */
-  price: (filters, category) => ipcRenderer.invoke('pricer:price', filters, category),
+  /** 선택한 옵션 필터로 시세 조회. filters:[{id,min?,max?}], opts:{category,ilvl,rarity} */
+  price: (filters, opts) => ipcRenderer.invoke('pricer:price', filters, opts),
   /** GGG 거래 페이지를 기본 브라우저로 연다. */
   openUrl: (url) => ipcRenderer.invoke('pricer:openUrl', url),
   /** 현재 아이템+선택옵션을 즐겨찾기에 추가(메인창 적재). */
