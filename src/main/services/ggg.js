@@ -27,7 +27,7 @@ const TRADE_BASE = 'https://www.pathofexile.com/api/trade2';
 const SAMPLE_SIZE = 10;
 // 시세 캐시 TTL: 12분(과도한 호출 방지, 인게임 변동 반영 균형).
 const PRICE_TTL = 12 * 60 * 1000;
-const RATE_TTL = 12 * 60 * 1000;
+const RATE_TTL = 30 * 60 * 1000; // 환율은 비교적 안정적 → 길게 캐시(pre-warm 이 오래 유효)
 
 // 버킷별 최소 호출 간격(ms). 실측 리밋보다 보수적으로(차단 회피 우선).
 const SPACING = Object.freeze({ search: 2300, fetch: 1200, exchange: 1500 });
@@ -116,6 +116,71 @@ async function getRate(league, currency) {
   return null;
 }
 
+/** 캐시된 환율만 반환(네트워크 안 함). 미캐시면 undefined → 핫패스에서 새 호출 방지. */
+function cachedRate(league, currency) {
+  if (!currency || currency === 'exalted' || currency === 'exalt') return 1;
+  const hit = _rateCache.get(`${league}|${currency}`);
+  if (hit && Date.now() - hit.at < RATE_TTL) return hit.rate;
+  return undefined;
+}
+
+// 미캐시 통화는 백그라운드로 한 번만 적재(다음 조회 때 캐시 히트 → 빠름). 중복 방지.
+const _pendingRate = new Set();
+function ensureRate(league, currency) {
+  if (!currency || currency === 'exalted' || currency === 'exalt') return;
+  const key = `${league}|${currency}`;
+  if (cachedRate(league, currency) !== undefined || _pendingRate.has(key)) return;
+  _pendingRate.add(key);
+  Promise.resolve(getRate(league, currency)).catch(() => {}).then(() => _pendingRate.delete(key));
+}
+
+// 매물 가격에 흔히 쓰이는 통화 — 시작 시 미리 받아 조회 핫패스에서 환율 호출 0회로.
+const PREWARM_CURRENCIES = Object.freeze([
+  'divine', 'chaos', 'regal', 'vaal', 'annul', 'alch', 'aug', 'transmute', 'chance', 'exalted',
+]);
+
+/** 시작 시(또는 리그 전환 후) 흔한 통화 환율을 미리 캐시한다. 백그라운드 호출용. */
+async function prewarmRates(league) {
+  if (!league) return;
+  for (const c of PREWARM_CURRENCIES) {
+    try {
+      await getRate(league, c);
+    } catch (e) {
+      /* 개별 실패 무시 */
+    }
+  }
+}
+
+/**
+ * fetch 매물들 → "최저가 매물" 원본 통화 그대로(환율 변환 없음 → 빠름).
+ * GGG 가 가격 오름차순으로 주므로 첫 매물이 최저가. divine/exalted 면 해당 필드,
+ * 그 외 통화면 altAmount/altCurrency. low=가장 싼 몇 건(맥락용).
+ */
+function cheapestFromRows(rows, total) {
+  const priced = [];
+  for (const row of rows) {
+    const p = row && row.listing && row.listing.price;
+    if (p && typeof p.amount === 'number' && p.amount > 0 && p.currency) {
+      priced.push({ amount: p.amount, currency: p.currency });
+    }
+  }
+  if (!priced.length) return null;
+  const c = priced[0];
+  const out = {
+    divine: null, exalted: null, altAmount: null, altCurrency: null,
+    listingCount: typeof total === 'number' ? total : priced.length,
+    sampled: priced.length,
+    low: priced.slice(0, 6),
+  };
+  if (c.currency === 'divine') out.divine = c.amount;
+  else if (c.currency === 'exalted' || c.currency === 'exalt') out.exalted = c.amount;
+  else {
+    out.altAmount = c.amount;
+    out.altCurrency = c.currency;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // 검색 쿼리 빌더
 // ---------------------------------------------------------------------------
@@ -201,34 +266,12 @@ async function priceItem(league, rec, opts = {}) {
   }
   const rows = (fres && fres.result) || [];
 
-  // 3) 매물 가격을 exalted 로 정규화
-  const exValues = [];
-  const currencies = new Set();
-  for (const row of rows) {
-    const p = row && row.listing && row.listing.price;
-    if (!p || typeof p.amount !== 'number' || !p.currency) continue;
-    currencies.add(p.currency);
-    const rate = await getRate(league, p.currency);
-    if (rate == null) continue;
-    const ex = p.amount * rate;
-    if (ex > 0 && isFinite(ex)) exValues.push(ex);
-  }
-  if (!exValues.length) {
+  // 3) 최저가 매물을 원본 통화 그대로(환율 변환 없음). 매물 없으면 null.
+  const price = cheapestFromRows(rows, sres.total);
+  if (!price) {
     _priceCache.set(sig, { price: null, at: Date.now() });
     return null;
   }
-
-  const med = median(exValues);
-  const min = Math.min(...exValues);
-  const divRate = await getRate(league, 'divine'); // exalted→divine 환산용
-  const price = {
-    exalted: med,
-    divine: divRate ? med / divRate : null,
-    min,
-    listingCount: typeof sres.total === 'number' ? sres.total : exValues.length,
-    sampled: exValues.length,
-    currencies: [...currencies],
-  };
   _priceCache.set(sig, { price, at: Date.now() });
   return price;
 }
@@ -306,7 +349,7 @@ function tradeUrl(league, id) {
   return `https://www.pathofexile.com/trade2/search/poe2/${encodeURIComponent(league)}/${id}`;
 }
 
-/** 검색 결과(sres)의 상위 매물을 받아 exalted 중앙값/최저가를 계산. */
+/** 검색 결과(sres)의 최저가 매물을 원본 통화 그대로 반환(환율 변환 없음 → 빠름). */
 async function _priceFromSearch(league, sres) {
   const ids = sres.result.slice(0, SAMPLE_SIZE);
   let fres = null;
@@ -315,30 +358,7 @@ async function _priceFromSearch(league, sres) {
   } catch (e) {
     return null;
   }
-  const rows = (fres && fres.result) || [];
-  const exValues = [];
-  for (const row of rows) {
-    const p = row && row.listing && row.listing.price;
-    if (!p || typeof p.amount !== 'number' || !p.currency) continue;
-    const rate = await getRate(league, p.currency);
-    if (rate == null) continue;
-    const ex = p.amount * rate;
-    if (ex > 0 && isFinite(ex)) exValues.push(ex);
-  }
-  if (!exValues.length) return null;
-  // 미끼/오기재(중앙값 40% 미만, 예: 1디바인 아이템을 1ex 에 등록) 제외 → 현실적 시세.
-  const med0 = median(exValues);
-  const realistic = exValues.filter((v) => v >= med0 * 0.4);
-  const useVals = realistic.length >= 2 ? realistic : exValues;
-  const divRate = await getRate(league, 'divine');
-  const med = median(useVals);
-  return {
-    exalted: med,
-    divine: divRate ? med / divRate : null,
-    min: Math.min(...useVals),
-    listingCount: typeof sres.total === 'number' ? sres.total : exValues.length,
-    sampled: useVals.length,
-  };
+  return cheapestFromRows((fres && fres.result) || [], sres.total);
 }
 
 /**
@@ -436,6 +456,7 @@ module.exports = {
   priceByStatFilters,
   matchItemMods,
   gggCategoryId,
+  prewarmRates,
   buildStatQuery,
   statFilterValue,
   modWeight,

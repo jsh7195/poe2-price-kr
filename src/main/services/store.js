@@ -28,6 +28,20 @@ function withLivePrice(rec, live) {
     valueChaos: null,
     change7d: null, // ninja 7일 변동은 더 이상 신뢰원으로 쓰지 않음
     listingCount: live ? live.listingCount : null,
+    // 최저가 매물이 divine/exalted 가 아닌 통화면(예: chaos) 원본 그대로 표기.
+    altPrice: live && live.altAmount ? { amount: live.altAmount, currency: live.altCurrency } : null,
+  };
+}
+
+/** 즐겨찾기 저장용 가격 스냅샷(divine/exalted/alt 중 있는 것). 없으면 null. */
+function priceSnapshot(p) {
+  if (!p || (p.divine == null && p.exalted == null && p.altAmount == null)) return null;
+  return {
+    divine: p.divine ?? null,
+    exalted: p.exalted ?? null,
+    altAmount: p.altAmount ?? null,
+    altCurrency: p.altCurrency ?? null,
+    listingCount: p.listingCount ?? null,
   };
 }
 
@@ -108,7 +122,7 @@ class Store extends EventEmitter {
   async _getDict(force = false) {
     if (this.dict && !force) return this.dict;
     if (!force) {
-      const cached = await this.cache.get('dictionary', TTL.dictionary);
+      const cached = await this.cache.get('dictionary_v2', TTL.dictionary);
       if (cached && cached.enToKr) {
         this.dict = cached;
         return this.dict;
@@ -116,7 +130,7 @@ class Store extends EventEmitter {
     }
     this._emit('loading', '한글 사전 받는 중…');
     const dict = await buildDictionary();
-    await this.cache.set('dictionary', dict);
+    await this.cache.set('dictionary_v2', dict);
     this.dict = dict;
     return dict;
   }
@@ -131,6 +145,13 @@ class Store extends EventEmitter {
     }
     this._statIndex = buildStatIndex(raw);
     return this._statIndex;
+  }
+
+  /** 통화 아이콘 맵(id→URL)을 ref 에 부착 → 렌더러가 가격 옆에 아이콘 표시. */
+  _attachIcons() {
+    if (this.catalog && this.catalog.ref && this.dict && this.dict.currencyIcons) {
+      this.catalog.ref.currencyIcons = this.dict.currencyIcons;
+    }
   }
 
   async _getLeagues(force = false) {
@@ -160,6 +181,8 @@ class Store extends EventEmitter {
       const cached = await this.cache.get(key, TTL.prices);
       if (cached && cached.records) {
         this.catalog = cached;
+        await this._getDict(); // 통화 아이콘 맵 확보
+        this._attachIcons();
         return cached;
       }
     }
@@ -169,12 +192,14 @@ class Store extends EventEmitter {
       const catalog = await buildCatalog(this.selectedLeague, dict);
       await this.cache.set(key, catalog);
       this.catalog = catalog;
+      this._attachIcons();
       return catalog;
     } catch (e) {
       // 빌드 실패 시 만료된 캐시라도 폴백
       const stale = await this.cache.getEntry(key);
       if (stale && stale.data && stale.data.records) {
         this.catalog = stale.data;
+        this._attachIcons();
         return this.catalog;
       }
       throw e;
@@ -247,7 +272,8 @@ class Store extends EventEmitter {
       /* 네트워크/레이트리밋 → 시세 없음 */
     }
     const name = parsed.base || parsed.name;
-    if (!price || price.rateLimited || price.empty || price.exalted == null) {
+    const hasPrice = price && (price.divine != null || price.exalted != null || price.altAmount != null);
+    if (!price || price.rateLimited || price.empty || !hasPrice) {
       const reason = price && price.rateLimited ? '조회 한도(30분) — 잠시 후 다시' : '동급 매물 없음';
       return { found: false, rare: true, name, reason };
     }
@@ -262,6 +288,7 @@ class Store extends EventEmitter {
       valueChaos: null,
       change7d: null,
       listingCount: price.listingCount,
+      altPrice: price.altAmount ? { amount: price.altAmount, currency: price.altCurrency } : null,
     };
     return {
       found: true,
@@ -298,6 +325,7 @@ class Store extends EventEmitter {
       itemLevel: parsed.itemLevel,
       corrupted: parsed.corrupted,
       mods,
+      currencyIcons: (this.dict && this.dict.currencyIcons) || null,
     };
   }
 
@@ -370,8 +398,7 @@ class Store extends EventEmitter {
     if (list.some((f) => f.key === key)) return list;
     let lastPrice = null;
     try {
-      const p = await this._priceRecord(rec);
-      if (p && p.exalted != null) lastPrice = { exalted: p.exalted, divine: p.divine, listingCount: p.listingCount };
+      lastPrice = priceSnapshot(await this._priceRecord(rec));
     } catch (e) {
       /* 가격 실패해도 즐겨찾기는 저장 */
     }
@@ -423,11 +450,9 @@ class Store extends EventEmitter {
       /* 실패 → 기존 값 유지 */
     }
     let lastPrice = fav.lastPrice;
-    if (price && !price.empty && price.exalted != null) {
-      lastPrice = { exalted: price.exalted, divine: price.divine, listingCount: price.listingCount };
-    } else if (price && price.empty) {
-      lastPrice = { empty: true };
-    }
+    const snap = priceSnapshot(price);
+    if (snap) lastPrice = snap;
+    else if (price && price.empty) lastPrice = { empty: true };
     return this._saveFavorites(list.map((f) => (f.key === key ? { ...f, lastPrice } : f)));
   }
 

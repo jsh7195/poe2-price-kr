@@ -98,7 +98,12 @@ function render(payload) {
   }
   const rec = payload.record;
   const ref = payload.ref || {};
-  const { primary, secondary } = valueParts(rec, ref);
+  let { primary, secondary } = valueParts(rec, ref);
+  // 최저가 매물이 divine/exalted 가 아닌 통화면(chaos 등) 원본 통화 아이콘과 함께 표기.
+  if (!primary && rec.altPrice) {
+    const icons = ref.currencyIcons || {};
+    primary = { num: rec.altPrice.amount, unit: rec.altPrice.currency, icon: icons[rec.altPrice.currency] || '' };
+  }
   if (!primary) {
     showNoItem('시세 없음');
     return;

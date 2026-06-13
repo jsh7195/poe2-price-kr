@@ -12,6 +12,7 @@ const resultEl = document.getElementById('result');
 let currentMods = []; // [{cb, minEl, id, matched, text}]
 let currentItem = null;
 let lastFilters = [];
+let currencyIcons = {}; // 통화 id → 아이콘 URL
 
 const AFFIX_LABEL = { implicit: '고정', prefix: '접두', suffix: '접미', explicit: '비고정', rune: '룬', crafted: '제작', enchant: '인챈트' };
 
@@ -29,6 +30,7 @@ function fmt(n) {
 function renderItem(item) {
   currentMods = [];
   currentItem = item;
+  currencyIcons = (item && item.currencyIcons) || {};
   resultEl.replaceChildren();
   if (!item) {
     itemNameEl.textContent = '아이템 없음';
@@ -147,7 +149,8 @@ function renderResult(res, nFilters) {
     resultEl.appendChild(e);
     return;
   }
-  if (res.empty || res.exalted == null) {
+  const pl = priceLabel(res);
+  if (res.empty || !pl) {
     const e = document.createElement('div');
     e.className = 'empty';
     e.textContent = '이 조건의 매물이 없습니다. 옵션을 줄이거나 최소값을 낮춰보세요.';
@@ -155,18 +158,30 @@ function renderResult(res, nFilters) {
     if (res.searchUrl) resultEl.appendChild(glink(res.searchUrl));
     return;
   }
+  // 최저가 매물 원본 통화 + 아이콘으로 표시(환율 변환 없음).
   const price = document.createElement('div');
   price.className = 'price';
-  price.textContent = fmt(res.exalted);
-  const unit = document.createElement('span');
-  unit.className = 'unit';
-  unit.textContent = 'ex' + (res.divine != null && res.divine >= 0.1 ? '  ·  ' + fmt(res.divine) + ' div' : '');
-  price.appendChild(unit);
+  const num = document.createElement('span');
+  num.textContent = fmt(pl.num);
+  price.appendChild(num);
+  price.appendChild(curEl(pl.currency, pl.unit, 22));
   resultEl.appendChild(price);
 
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = `옵션 ${nFilters}개 · 매물 ${res.listingCount >= 100 ? '100+' : res.listingCount}개 · 최저 ${fmt(res.min)}ex (미끼 제외)`;
+  sub.append(`옵션 ${nFilters}개 · 매물 ${res.listingCount >= 100 ? '100+' : res.listingCount}개`);
+  const lows = (res.low || []).slice(0, 5);
+  if (lows.length) {
+    sub.append('  ·  최저 ');
+    lows.forEach((l, i) => {
+      if (i) sub.append(' · ');
+      const span = document.createElement('span');
+      span.className = 'lowitem';
+      span.append(fmt(l.amount));
+      span.appendChild(curEl(l.currency, curShort(l.currency), 14));
+      sub.appendChild(span);
+    });
+  }
   resultEl.appendChild(sub);
 
   const actions = document.createElement('div');
@@ -174,6 +189,38 @@ function renderResult(res, nFilters) {
   if (res.searchUrl) actions.appendChild(glink(res.searchUrl));
   actions.appendChild(favBtn(res));
   resultEl.appendChild(actions);
+}
+
+function curShort(c) {
+  return c === 'divine' ? 'div' : c === 'exalted' || c === 'exalt' ? 'ex' : c;
+}
+function priceLabel(res) {
+  if (res.divine != null) return { num: res.divine, unit: 'div', currency: 'divine' };
+  if (res.exalted != null) return { num: res.exalted, unit: 'ex', currency: 'exalted' };
+  if (res.altAmount != null) return { num: res.altAmount, unit: curShort(res.altCurrency), currency: res.altCurrency };
+  return null;
+}
+/** 통화 아이콘 img(없으면 텍스트 fallback). size=px. */
+function curEl(currency, fallbackText, size) {
+  const icon = currencyIcons[currency];
+  if (icon) {
+    const img = document.createElement('img');
+    img.className = 'cur-img';
+    img.src = icon;
+    img.alt = fallbackText;
+    img.title = fallbackText;
+    img.width = size;
+    img.height = size;
+    img.onerror = () => img.replaceWith(unitText(fallbackText));
+    return img;
+  }
+  return unitText(fallbackText);
+}
+function unitText(t) {
+  const s = document.createElement('span');
+  s.className = 'unit';
+  s.textContent = ' ' + t;
+  return s;
 }
 
 function favBtn(res) {
@@ -190,7 +237,11 @@ function favBtn(res) {
         categoryId: currentItem ? currentItem.categoryId : null,
         filters: lastFilters,
         mods,
-        price: { exalted: res.exalted, divine: res.divine, listingCount: res.listingCount },
+        price: {
+          divine: res.divine, exalted: res.exalted,
+          altAmount: res.altAmount, altCurrency: res.altCurrency,
+          listingCount: res.listingCount,
+        },
       });
       b.textContent = '⭐ 메인창에 담김';
       b.disabled = true;

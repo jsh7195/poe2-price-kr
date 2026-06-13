@@ -73,7 +73,18 @@ function buildFromRaw(staticEn, staticKr, itemsEn, itemsKr) {
     });
   }
 
-  return { enToKr, size: Object.keys(enToKr).length };
+  // --- 통화 아이콘: static 엔트리(id+image) → 절대 URL. 매물 price.currency 가 이 id 와 일치. ---
+  const POECDN = 'https://web.poecdn.com';
+  const toUrl = (img) =>
+    /^https?:\/\//i.test(img) ? img : POECDN + (img.startsWith('/') ? img : '/' + img);
+  const currencyIcons = Object.create(null);
+  for (const cat of (staticEn && staticEn.result) || []) {
+    for (const e of cat.entries || []) {
+      if (e.id && e.image && !currencyIcons[e.id]) currencyIcons[e.id] = toUrl(e.image);
+    }
+  }
+
+  return { enToKr, currencyIcons, size: Object.keys(enToKr).length };
 }
 
 /**

@@ -92,8 +92,11 @@ body {
 .search-btn:disabled { opacity: 0.6; cursor: default; filter: grayscale(0.3); }
 
 .result { margin-top: 10px; min-height: 22px; }
-.result .price { font-size: 22px; font-weight: 800; color: var(--gold-bright); font-variant-numeric: tabular-nums; }
+.result .price { font-size: 22px; font-weight: 800; color: var(--gold-bright); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 4px; }
 .result .price .unit { font-size: 12px; color: var(--text-dim); font-weight: 600; margin-left: 4px; }
+.cur-img { object-fit: contain; vertical-align: middle; }
+.lowitem { display: inline-flex; align-items: center; gap: 1px; }
+.lowitem .cur-img { width: 14px; height: 14px; }
 .result .sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 .result .glink {
   -webkit-app-region: no-drag;

@@ -45,6 +45,13 @@ function fmtNum(n) {
   return '0';
 }
 
+function curShort(c) {
+  return c === 'divine' ? 'div' : c === 'exalted' || c === 'exalt' ? 'ex' : c;
+}
+function currencyIcon(c) {
+  return (ref && ref.currencyIcons && ref.currencyIcons[c]) || '';
+}
+
 function timeAgo(ts) {
   if (!ts) return '';
   const s = (Date.now() - ts) / 1000;
@@ -211,14 +218,18 @@ function starButton(rec) {
 
 function renderFavPrice(val, lp) {
   val.replaceChildren();
-  if (!lp || lp.empty || lp.exalted == null) {
+  const hasPrice = lp && !lp.empty && (lp.divine != null || lp.exalted != null || lp.altAmount != null);
+  if (!hasPrice) {
     const e = document.createElement('div');
     e.className = 'val-secondary';
     e.textContent = lp && lp.empty ? '매물 없음' : '미조회';
     val.appendChild(e);
     return;
   }
-  const { primary, secondary } = valueParts({ valueDivine: lp.divine, valueExalted: lp.exalted });
+  let { primary, secondary } = valueParts({ valueDivine: lp.divine, valueExalted: lp.exalted });
+  if (!primary && lp.altAmount != null) {
+    primary = { num: lp.altAmount, unit: curShort(lp.altCurrency), icon: currencyIcon(lp.altCurrency) };
+  }
   if (primary) val.appendChild(valueLine(primary, 'val-primary'));
   if (secondary) val.appendChild(valueLine(secondary, 'val-secondary'));
   if (lp.listingCount) {
@@ -360,9 +371,12 @@ function renderRowPrice(valWrap, rec, state, price) {
       valWrap.appendChild(rl);
       return;
     }
-    const { primary, secondary } = price
+    let { primary, secondary } = price
       ? valueParts({ valueDivine: price.divine, valueExalted: price.exalted })
       : { primary: null, secondary: null };
+    if (!primary && price && price.altAmount != null) {
+      primary = { num: price.altAmount, unit: curShort(price.altCurrency), icon: currencyIcon(price.altCurrency) };
+    }
     if (primary) valWrap.appendChild(valueLine(primary, 'val-primary'));
     if (secondary) valWrap.appendChild(valueLine(secondary, 'val-secondary'));
     if (!primary) {
