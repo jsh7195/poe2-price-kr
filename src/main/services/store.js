@@ -7,7 +7,7 @@ const { fetchLeagues } = require('./leagues');
 const { buildDictionary } = require('./dictionary');
 const { buildCatalog } = require('./catalog');
 const { search, scoreRecord } = require('./search');
-const { normKr, normEn } = require('./normalize');
+const { normKr, normEn, jamoSimilarity } = require('./normalize');
 const { extractItemName, parseRecipeLines } = require('./itemtext');
 const { parseItem } = require('./itemparse');
 const { isElevated } = require('./elevation');
@@ -586,6 +586,12 @@ class Store extends EventEmitter {
       // OCR 앞뒤 노이즈/잘림 흡수: 쿼리가 아이템명을 포함하는 경우도 인정
       if (rec.krNorm.length >= 3 && qKr.includes(rec.krNorm)) s = Math.max(s, 700);
       if (rec.enNorm.length >= 4 && qEn.includes(rec.enNorm)) s = Math.max(s, 680);
+      // OCR 오인식(룬→른, 으→오 등) 흡수: 자모 단위 유사도. 정확 매칭이 약할 때만 적용하고
+      // 점수를 500~700 으로 제한해 실제 정확 매칭(700+)이 항상 우선되게 한다.
+      if (s < 700 && qKr.length >= 3 && rec.krNorm.length >= 3) {
+        const sim = jamoSimilarity(qKr, rec.krNorm);
+        if (sim >= 0.8) s = Math.max(s, Math.round(500 + (sim - 0.8) * 1000));
+      }
       if (s < 500) continue; // 약한 매칭 제외
       // 길이 근접 우선: 잘린 이름이 여러 아이템에 포함될 때 가장 가까운 쪽 선택
       // (예: "하위 정신" → "하위 정신 룬"(diff 1) vs "하위 정신의 에센스"(diff 4))

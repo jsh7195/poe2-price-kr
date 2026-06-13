@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { normEn, normKr, isSubsequence } = require('../src/main/services/normalize');
+const { normEn, normKr, isSubsequence, decomposeHangul, jamoSimilarity } = require('../src/main/services/normalize');
 const { makeValueCalc, parseExchange, parseStash } = require('../src/main/services/ninja');
 const { buildFromRaw } = require('../src/main/services/dictionary');
 const { search } = require('../src/main/services/search');
@@ -220,6 +220,39 @@ test('scanRecipe: 잘린 이름은 길이 가까운 아이템으로 매칭', asy
   const res = await store.scanRecipe(['1x 하위 정신'], fakePricer);
   assert.equal(res.items.length, 1);
   assert.equal(res.items[0].record.en, 'Lesser Mind Rune');
+});
+
+test('decomposeHangul: 음절을 자모로 분해(룬↔른은 자모 1개 차이)', () => {
+  assert.equal(decomposeHangul('룬'), 'ㄹㅜㄴ');
+  assert.equal(decomposeHangul('른'), 'ㄹㅡㄴ');
+  assert.equal(decomposeHangul('정신룬'), 'ㅈㅓㅇㅅㅣㄴㄹㅜㄴ');
+  assert.equal(decomposeHangul('Rune'), 'Rune'); // 비한글 보존
+});
+
+test('jamoSimilarity: OCR 오인식(룬→른)은 높은 유사도', () => {
+  assert.equal(jamoSimilarity('정신룬', '정신룬'), 1);
+  assert.ok(jamoSimilarity('정신룬', '정신른') >= 0.85); // 자모 1/9 차이 ≈ 0.889
+  assert.ok(jamoSimilarity('카오스오브', '전혀다른말') < 0.5);
+});
+
+test('scanRecipe: OCR 오인식(룬→른)도 퍼지 매칭으로 시세 조회', async () => {
+  const store = new Store(os.tmpdir());
+  const rec = (kr, en, cat, vDiv) => ({
+    kr, en, krNorm: normKr(kr), enNorm: normEn(en),
+    categoryKey: cat, labelKr: cat, valueDivine: vDiv, valueExalted: vDiv * 80,
+  });
+  store.catalog = {
+    ref: {},
+    records: [
+      rec('하위 정신 룬', 'Lesser Mind Rune', '룬', 0.005),
+      rec('대장장이의 숫돌', "Blacksmith's Whetstone", '화폐', 0.002),
+    ],
+  };
+  // FHD 저선명 OCR 이 "룬"을 "른"으로 오인식 → 자모 퍼지 매칭으로 구제
+  const res = await store.scanRecipe(['3x 하위 정신 른'], fakePricer);
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].record.en, 'Lesser Mind Rune');
+  assert.equal(res.items[0].qty, 3);
 });
 
 test('scanRecipe: 같은 아이템 다른 수량(6x·4x)은 별개 행으로 유지', async () => {
