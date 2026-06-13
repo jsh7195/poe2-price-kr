@@ -66,6 +66,11 @@ $pos = [System.Windows.Forms.Cursor]::Position
 $scr = [System.Windows.Forms.Screen]::FromPoint($pos)
 $b = $scr.Bounds
 Write-Output ('__OCR_DIM__ ' + $b.Width + 'x' + $b.Height + ' max=' + $max)
+# 캡처 임박 신호: 메인이 이 시점에 로딩 오버레이를 숨겨 캡처에 안 찍히게 한다.
+# 150ms 여유 후 캡처 → 렌더러가 hide 를 적용할 시간을 준다(콜드스타트 동안엔 로딩이 떠 있음).
+Write-Output '__CAPTURING__'
+[Console]::Out.Flush()
+Start-Sleep -Milliseconds 150
 $full = New-Object System.Drawing.Bitmap $b.Width, $b.Height
 $g = [System.Drawing.Graphics]::FromImage($full)
 $g.CopyFromScreen($b.X, $b.Y, 0, 0, $full.Size)
@@ -116,12 +121,13 @@ $full.Dispose()
 `;
 
 /**
- * @param {{timeoutMs?:number, onCaptured?:()=>void}} [opts]
+ * @param {{timeoutMs?:number, onCapturing?:()=>void, onCaptured?:()=>void}} [opts]
+ *   onCapturing: 화면 캡처 직전 호출(로딩 오버레이를 숨겨 캡처 오염 방지).
  *   onCaptured: 화면 캡처가 끝난 순간 호출(이후 로딩 오버레이를 띄워도 캡처에 안 찍힘).
  * @returns {Promise<{lines:string[], noLang:boolean, dim:string, lang:string, err:string}>}
  */
 function scanScreen(opts = {}) {
-  const { timeoutMs = 22000, onCaptured } = opts;
+  const { timeoutMs = 22000, onCapturing, onCaptured } = opts;
   return new Promise((resolve, reject) => {
     if (process.platform !== 'win32') {
       reject(new Error('OCR 스캔은 Windows 전용'));
@@ -133,6 +139,7 @@ function scanScreen(opts = {}) {
     });
     let out = '';
     let err = '';
+    let capturingSignaled = false;
     let captureSignaled = false;
     const timer = setTimeout(() => {
       ps.kill();
@@ -141,6 +148,13 @@ function scanScreen(opts = {}) {
     ps.stdout.setEncoding('utf8');
     ps.stdout.on('data', (d) => {
       out += d;
+      // 캡처 임박 마커 → 로딩 오버레이를 숨겨 캡처에 안 찍히게.
+      if (!capturingSignaled && out.includes('__CAPTURING__')) {
+        capturingSignaled = true;
+        if (typeof onCapturing === 'function') {
+          try { onCapturing(); } catch (_) { /* noop */ }
+        }
+      }
       // 캡처 완료 마커가 스트림에 보이면 즉시 콜백(로딩 표시 트리거).
       if (!captureSignaled && out.includes('__CAPTURED__')) {
         captureSignaled = true;
@@ -160,7 +174,7 @@ function scanScreen(opts = {}) {
       const lines = [];
       for (const l of raw) {
         if (l === '__NO_OCR_LANG__') { noLang = true; continue; }
-        if (l === '__CAPTURED__') { continue; }
+        if (l === '__CAPTURED__' || l === '__CAPTURING__') { continue; }
         if (l.startsWith('__OCR_DIM__')) { dim = l.replace('__OCR_DIM__', '').trim(); continue; }
         if (l.startsWith('__OCR_LANG__')) { lang = l.replace('__OCR_LANG__', '').trim(); continue; }
         lines.push(l);

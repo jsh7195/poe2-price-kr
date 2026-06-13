@@ -116,10 +116,12 @@ async function runScan(store, overlay) {
     overlay.show(point, { scan: true, items: [], reason: '준비 중' });
     return;
   }
-  overlay.hide(); // 오버레이가 캡처에 찍히지 않도록
+  // F10 누르는 즉시 로딩 표시(PowerShell 콜드스타트가 길어도 먹통처럼 보이지 않게).
+  // 캡처 직전(__CAPTURING__)에 잠깐 숨겨 스피너가 스크린샷에 안 찍히게 하고, 캡처 후 다시 표시.
+  overlay.show(point, { loading: true });
   try {
-    // 캡처가 끝난 뒤에만 로딩 스피너 표시(캡처에 스피너가 찍히지 않게).
     const { lines, noLang, dim, lang } = await scanScreen({
+      onCapturing: () => overlay.hide(),
       onCaptured: () => overlay.show(screen.getCursorScreenPoint(), { loading: true }),
     });
     if (noLang) {
