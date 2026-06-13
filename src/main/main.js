@@ -16,6 +16,7 @@ const { Store } = require('./services/store');
 const { redact } = require('./services/redact');
 const { registerIpc } = require('./ipc');
 const { Overlay } = require('./overlay');
+const { Pricer } = require('./pricer');
 const { setupHotkey, teardownHotkey } = require('./hotkey');
 const { setupUpdater } = require('./updater');
 
@@ -24,6 +25,7 @@ const ASSET = (f) => path.join(__dirname, '..', '..', 'assets', f);
 let mainWindow = null;
 let store = null;
 let overlay = null;
+let pricer = null;
 let tray = null;
 let isQuiting = false;
 let notifiedTray = false;
@@ -60,6 +62,10 @@ function createWindow(startHidden = false) {
 
   store.on('status', (s) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:status', s);
+  });
+  // 즐겨찾기 변경(인게임 Shift+F9 에서 담아도 메인창 실시간 반영)
+  store.on('favorites', (list) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:favorites', list);
   });
 
   // 창 닫기 = 트레이로 숨김(앱은 계속 실행 → F9 유지). 실제 종료는 트레이 메뉴에서.
@@ -162,7 +168,10 @@ function start() {
     overlay = new Overlay();
     overlay.create();
 
-    registerIpc(store, overlay); // overlay:test 핸들러 포함
+    pricer = new Pricer(); // Shift+F9 인터랙티브 옵션 시세 창
+    pricer.create();
+
+    registerIpc(store, overlay, pricer); // overlay:test, pricer:* 핸들러 포함
 
     // 트레이 모드: 설정이 켜져 있으면 창을 숨긴 채 시작
     const settings = await store.getSettings();
@@ -197,7 +206,7 @@ function start() {
     });
 
     if (process.platform === 'win32' && !process.env.POE_SHOT) {
-      store.setHotkeyOk(setupHotkey(store, overlay)); // 등록 실패 시 UI 경고
+      store.setHotkeyOk(setupHotkey(store, overlay, pricer)); // 등록 실패 시 UI 경고
       store.checkElevation(); // 관리자 권한 여부 확인(게임 위 F9용)
     }
     console.log('[main] F9 디버그 로그:', path.join(app.getPath('userData'), 'f9-debug.log'));
@@ -229,6 +238,7 @@ function start() {
   app.on('will-quit', () => {
     teardownHotkey();
     if (overlay) overlay.destroy();
+    if (pricer) pricer.destroy();
     if (tray) tray.destroy();
   });
 }

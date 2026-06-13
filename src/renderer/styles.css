@@ -229,7 +229,7 @@ body {
 
 .row {
   display: grid;
-  grid-template-columns: 46px 1fr auto;
+  grid-template-columns: 46px 1fr auto auto;
   align-items: center;
   gap: 14px;
   padding: 11px 14px;
@@ -290,6 +290,56 @@ body {
 .change { font-size: 11px; font-variant-numeric: tabular-nums; }
 .change.up { color: var(--pos); }
 .change.down { color: var(--neg); }
+
+/* 행 시세 클릭 조회(GGG 거래소 실시간) */
+.price-btn {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--gold-bright);
+  background: var(--chip-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.price-btn:hover { background: var(--surface-hover); border-color: var(--gold); }
+.price-btn:active { transform: translateY(1px); }
+.price-loading { font-size: 12px; color: var(--muted); font-style: italic; }
+.row-listings { font-size: 10.5px; color: var(--muted-2); font-variant-numeric: tabular-nums; }
+
+/* 즐겨찾기 */
+.star {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--muted-2); font-size: 18px; line-height: 1;
+  padding: 4px 4px; border-radius: 6px; justify-self: center;
+}
+.star:hover { background: var(--surface-hover); color: var(--gold-bright); }
+.star.on { color: var(--gold-bright); }
+.star:disabled { opacity: 0.5; cursor: default; }
+
+.fav-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 4px 10px;
+}
+.fav-title { font-size: 14px; font-weight: 700; color: var(--gold-bright); letter-spacing: 0.02em; }
+.fav-refresh-all {
+  font: inherit; font-size: 11.5px; color: var(--text-dim);
+  background: var(--chip-bg); border: 1px solid var(--border); border-radius: 7px;
+  padding: 5px 11px; cursor: pointer; transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.fav-refresh-all:hover { background: var(--surface-hover); border-color: var(--gold); color: var(--gold-bright); }
+.fav-refresh-all:disabled { opacity: 0.5; cursor: default; }
+
+.fav-actions { display: flex; gap: 5px; align-items: center; }
+.fav-btn {
+  font: inherit; font-size: 13px; color: var(--muted);
+  background: transparent; border: 1px solid var(--border); border-radius: 6px;
+  width: 28px; height: 28px; cursor: pointer; line-height: 1;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.fav-btn:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); }
+.fav-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ---------- States ---------- */
 .empty {

@@ -49,6 +49,9 @@ body {
 .change.up { color: #84c98a; }
 .change.down { color: #d9836f; }
 
+/* 실매물 기반 신뢰 신호: "거래소 N개" (GGG trade2 실시간) */
+.listings { font-size: 10px; color: #6f6450; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
 .noitem {
   font-size: 17px;
   font-weight: 600;
@@ -95,8 +98,35 @@ body {
   vertical-align: middle;
 }
 
+/* --- 로딩 스피너 --- */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 8px 2px;
+}
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(200, 169, 78, 0.25);
+  border-top-color: #e6c976;
+  animation: spin 700ms linear infinite;
+}
+.ltext { font-size: 14px; font-weight: 600; color: #b6a988; white-space: nowrap; }
+/* 로딩 단독 표시는 카드를 내용 크기로(고정 220px 가 좁은 창에서 글자 잘림 유발). */
+.card.compact { width: auto; min-width: 0; }
+
 .hidden { display: none; }
 .card .name:empty { display: none; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1400ms; }
+}
 
 @keyframes pop {
   from { opacity: 0; transform: scale(0.96); }

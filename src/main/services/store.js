@@ -9,8 +9,27 @@ const { buildCatalog } = require('./catalog');
 const { search, scoreRecord } = require('./search');
 const { normKr, normEn } = require('./normalize');
 const { extractItemName, parseRecipeLines } = require('./itemtext');
+const { parseItem } = require('./itemparse');
 const { isElevated } = require('./elevation');
+const ggg = require('./ggg');
+const { fetchRawStats, buildStatIndex } = require('./stats');
 const errorReport = require('./errorReport');
+
+// F10 스캔에서 GGG 실시간 조회할 최대 아이템 수(레이트리밋·지연 한계). 초과분은 partial 표시.
+const MAX_SCAN_PRICE = 8;
+
+/** 카탈로그 레코드 + GGG 라이브 가격 → 표시용 레코드(불변 복사).
+ *  ninja 의 value/change7d 는 표시에서 배제하고 GGG 실측가로 덮어쓴다. */
+function withLivePrice(rec, live) {
+  return {
+    ...rec,
+    valueDivine: live ? live.divine : null,
+    valueExalted: live ? live.exalted : null,
+    valueChaos: null,
+    change7d: null, // ninja 7일 변동은 더 이상 신뢰원으로 쓰지 않음
+    listingCount: live ? live.listingCount : null,
+  };
+}
 
 /**
  * 앱의 데이터 상태 보관소.
@@ -102,6 +121,18 @@ class Store extends EventEmitter {
     return dict;
   }
 
+  /** 옵션 검색용 한글 스탯 인덱스(모드텍스트→stat id). 메모리+디스크(raw) 캐시. */
+  async _getStatIndex(force = false) {
+    if (this._statIndex && !force) return this._statIndex;
+    let raw = force ? null : await this.cache.get('stats', TTL.dictionary);
+    if (!raw || !raw.result) {
+      raw = await fetchRawStats();
+      await this.cache.set('stats', raw);
+    }
+    this._statIndex = buildStatIndex(raw);
+    return this._statIndex;
+  }
+
   async _getLeagues(force = false) {
     // 디스크 캐시 TTL(6h)에 맡긴다 — 메모리 단락으로 프로세스 수명 내내 stale 되지 않도록.
     let data = force ? null : await this.cache.get('leagues', TTL.leagues);
@@ -171,6 +202,7 @@ class Store extends EventEmitter {
     if (this.building) return;
     this.building = true;
     try {
+      ggg.clearCache(); // 실시간 시세 캐시도 강제 갱신
       await this._getLeagues(false);
       await this._ensureCatalog(true);
       this.building = false;
@@ -187,6 +219,7 @@ class Store extends EventEmitter {
     if (this.building) return; // initialize/refresh 와 동시 빌드 방지(레이스 차단)
     this.building = true; // 첫 await 이전에 동기적으로 잠금
     this.selectedLeague = name;
+    ggg.clearCache(); // 리그가 바뀌면 이전 리그 시세는 무효
     try {
       await this.setSetting('league', name);
       this._emit('loading', `${name} 로 전환 중…`);
@@ -199,18 +232,232 @@ class Store extends EventEmitter {
     }
   }
 
+  /**
+   * 레어/매직 아이템: 붙은 옵션(모드)으로 "동급 이상" 실시세를 구해 표시용으로 가공.
+   * @returns {Promise<object>}
+   */
+  async _priceRare(parsed) {
+    let price = null;
+    try {
+      const idx = await this._getStatIndex();
+      price = await ggg.priceByMods(this.selectedLeague, parsed, idx, {
+        category: ggg.gggCategoryId(parsed.category),
+      });
+    } catch (e) {
+      /* 네트워크/레이트리밋 → 시세 없음 */
+    }
+    const name = parsed.base || parsed.name;
+    if (!price || price.rateLimited || price.empty || price.exalted == null) {
+      const reason = price && price.rateLimited ? '조회 한도(30분) — 잠시 후 다시' : '동급 매물 없음';
+      return { found: false, rare: true, name, reason };
+    }
+    const record = {
+      kr: name,
+      en: parsed.name,
+      labelKr: '레어',
+      baseType: parsed.base || '',
+      corrupted: parsed.corrupted,
+      valueDivine: price.divine,
+      valueExalted: price.exalted,
+      valueChaos: null,
+      change7d: null,
+      listingCount: price.listingCount,
+    };
+    return {
+      found: true,
+      rare: true,
+      record,
+      live: price,
+      ref: this.catalog.ref,
+      name,
+      subnote: `옵션 ${price.usedMods.length}/${price.totalExplicit}개 기준`,
+      searchUrl: price.searchUrl,
+    };
+  }
+
+  /**
+   * Shift+F9 인터랙티브: 클립 텍스트 → 아이템 메타 + 토글 가능한 모드 목록.
+   * @returns {Promise<null | {name,base,category,rarity,itemLevel,corrupted, mods:Array}>}
+   */
+  async inspectItem(clipText) {
+    const parsed = parseItem(clipText);
+    if (!parsed) return null;
+    let mods = [];
+    try {
+      const idx = await this._getStatIndex();
+      mods = ggg.matchItemMods(parsed, idx);
+    } catch (e) {
+      /* 스탯 사전 실패 → 메타만 */
+    }
+    return {
+      name: parsed.name,
+      base: parsed.base,
+      category: parsed.category,
+      categoryId: ggg.gggCategoryId(parsed.category), // GGG 타입 필터용(없으면 null)
+      rarity: parsed.rarity,
+      itemLevel: parsed.itemLevel,
+      corrupted: parsed.corrupted,
+      mods,
+    };
+  }
+
+  /**
+   * 인터랙티브: 사용자가 고른 옵션(필터)으로 동급이상 실시세.
+   * @param {Array<{id:string, min?:number, max?:number}>} picks
+   */
+  async priceByFilters(picks, category) {
+    if (!this.selectedLeague || !Array.isArray(picks) || !picks.length) return null;
+    const filters = picks
+      .filter((p) => p && p.id)
+      .map((p) => {
+        const value = {};
+        if (p.min != null && p.min !== '') value.min = Number(p.min);
+        if (p.max != null && p.max !== '') value.max = Number(p.max);
+        return { id: p.id, value: Object.keys(value).length ? value : undefined };
+      });
+    try {
+      return await ggg.priceByStatFilters(this.selectedLeague, filters, { category: category || undefined });
+    } catch (e) {
+      return null;
+    }
+  }
+
   /** 검색. 카탈로그 미준비면 빈 배열. */
   query(text, limit = 40) {
     if (!this.catalog) return [];
     return search(this.catalog.records, text, limit);
   }
 
+  /** 장착 장비(유니크)인가 — GGG 실시세 대상. 그 외(화폐·룬·우상 등 commodity)는 ninja. */
+  _isUnique(rec) {
+    return !!(rec && typeof rec.categoryKey === 'string' && rec.categoryKey.startsWith('unique'));
+  }
+
   /**
-   * 인게임 가격체크: 클립보드 아이템 텍스트 → 이름 추출 → 카탈로그 정확 매칭.
-   * @returns {{found:boolean, record?:object, ref?:object, name?:string, reason?:string}}
+   * 카탈로그 레코드의 시세.
+   *  - 유니크(장착 장비) → GGG 거래소 실시세(아이템별).
+   *  - 화폐/룬/우상/소모품(commodity) → ninja 집계값(즉시, 빠름).
+   * @returns {Promise<null | {exalted, divine, listingCount}>}
    */
-  priceCheck(clipText) {
+  async _priceRecord(rec) {
+    if (this._isUnique(rec)) {
+      return ggg.priceItem(this.selectedLeague, rec);
+    }
+    if (rec.valueExalted == null && rec.valueDivine == null) return null;
+    return { exalted: rec.valueExalted, divine: rec.valueDivine, listingCount: null };
+  }
+
+  // ---- 즐겨찾기 (메인창 적재 워치리스트) ----
+
+  /** 저장된 즐겨찾기 목록. */
+  async getFavorites() {
+    const s = await this.getSettings();
+    return Array.isArray(s.favorites) ? s.favorites : [];
+  }
+
+  async _saveFavorites(list) {
+    await this.setSetting('favorites', list);
+    this.emit('favorites', list); // 메인창 실시간 갱신(인게임에서 담아도 반영)
+    return list;
+  }
+
+  /** 카탈로그 아이템(유니크/통화)을 즐겨찾기에 추가(+즉시 시세 1회). */
+  async addCatalogFavorite(rec) {
+    if (!rec || !rec.en) return this.getFavorites();
+    const enNorm = rec.enNorm || normEn(rec.en);
+    const key = 'cat:' + [rec.categoryKey, enNorm, rec.baseType || '', rec.corrupted ? 1 : 0].join('|');
+    const list = await this.getFavorites();
+    if (list.some((f) => f.key === key)) return list;
+    let lastPrice = null;
+    try {
+      const p = await this._priceRecord(rec);
+      if (p && p.exalted != null) lastPrice = { exalted: p.exalted, divine: p.divine, listingCount: p.listingCount };
+    } catch (e) {
+      /* 가격 실패해도 즐겨찾기는 저장 */
+    }
+    const fav = {
+      key, kind: 'catalog',
+      kr: rec.kr || rec.en, en: rec.en, base: rec.baseType || '', icon: rec.icon || '', labelKr: rec.labelKr || '',
+      rec: { en: rec.en, enNorm, categoryKey: rec.categoryKey, baseType: rec.baseType || '', corrupted: !!rec.corrupted },
+      lastPrice, savedAt: Date.now(),
+    };
+    return this._saveFavorites([...list, fav]);
+  }
+
+  /** 레어(옵션 선택) 검색을 즐겨찾기에 추가. data:{name,base,filters:[{id,min}],mods:[text],price} */
+  async addRareFavorite(data) {
+    if (!data || !Array.isArray(data.filters) || !data.filters.length) return this.getFavorites();
+    const sig = data.filters.map((f) => f.id + ':' + (f.min != null ? f.min : '')).sort().join(',');
+    const key = 'rare:' + (data.base || data.name || '') + '|' + sig;
+    const list = await this.getFavorites();
+    if (list.some((f) => f.key === key)) return list;
+    const fav = {
+      key, kind: 'rare',
+      kr: data.base || data.name || '레어', en: data.name || '', base: data.base || '',
+      categoryId: data.categoryId || null,
+      filters: data.filters, mods: Array.isArray(data.mods) ? data.mods : [],
+      lastPrice: data.price || null, savedAt: Date.now(),
+    };
+    return this._saveFavorites([...list, fav]);
+  }
+
+  async removeFavorite(key) {
+    const list = await this.getFavorites();
+    return this._saveFavorites(list.filter((f) => f.key !== key));
+  }
+
+  /** 즐겨찾기 한 건의 시세를 다시 조회해 갱신. */
+  async repriceFavorite(key) {
+    const list = await this.getFavorites();
+    const fav = list.find((f) => f.key === key);
+    if (!fav) return list;
+    let price = null;
+    try {
+      if (fav.kind === 'catalog') {
+        price = await this._priceRecord(fav.rec);
+      } else {
+        const filters = fav.filters.map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
+        price = await ggg.priceByStatFilters(this.selectedLeague, filters, { category: fav.categoryId || undefined });
+      }
+    } catch (e) {
+      /* 실패 → 기존 값 유지 */
+    }
+    let lastPrice = fav.lastPrice;
+    if (price && !price.empty && price.exalted != null) {
+      lastPrice = { exalted: price.exalted, divine: price.divine, listingCount: price.listingCount };
+    } else if (price && price.empty) {
+      lastPrice = { empty: true };
+    }
+    return this._saveFavorites(list.map((f) => (f.key === key ? { ...f, lastPrice } : f)));
+  }
+
+  /**
+   * 단일 레코드의 GGG 실시간 시세(메인 창에서 행 클릭 시).
+   * @returns {Promise<object|null>} {exalted, divine, listingCount, ...} 또는 null
+   */
+  async livePrice(rec) {
+    if (!rec || !this.selectedLeague) return null;
+    try {
+      return await this._priceRecord(rec);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * 인게임 가격체크: 클립보드 아이템 텍스트 → 이름 추출 → 카탈로그 정확 매칭 →
+   * GGG 거래소 실시간 시세 부착(async).
+   * @returns {Promise<{found:boolean, record?:object, live?:object|null, ref?:object, name?:string, reason?:string}>}
+   */
+  async priceCheck(clipText) {
     if (!this.catalog) return { found: false, reason: '준비 중' };
+
+    // 레어/매직(랜덤 옵션 아이템)은 이름으로 시세가 안 나온다 → 붙은 옵션으로 "동급 이상" 검색.
+    const parsed = parseItem(clipText);
+    if (parsed && (parsed.rarity === 'rare' || parsed.rarity === 'magic') && parsed.mods.length) {
+      return this._priceRare(parsed);
+    }
+
     const name = extractItemName(clipText);
     if (!name) return { found: false, name: '' };
     const results = search(this.catalog.records, name, 5);
@@ -219,16 +466,32 @@ class Store extends EventEmitter {
     const qK = normKr(name);
     const qE = normEn(name);
     const best = results.find((r) => r.krNorm === qK || r.enNorm === qE) || results[0];
-    return { found: true, record: best, ref: this.catalog.ref, name };
+    // 유니크(장비)만 GGG 실시세, 화폐·룬·우상 등은 ninja 값 그대로(빠름).
+    if (this._isUnique(best)) {
+      let live = null;
+      try {
+        live = await ggg.priceItem(this.selectedLeague, best);
+      } catch (e) {
+        /* 네트워크 오류 → 시세 없음 */
+      }
+      if (live && live.rateLimited) {
+        return { found: false, name, reason: '조회 한도(30분) — 잠시 후 다시' };
+      }
+      return { found: true, record: withLivePrice(best, live), live, ref: this.catalog.ref, name };
+    }
+    return { found: true, record: best, ref: this.catalog.ref, name, source: 'ninja' };
   }
 
   /**
-   * 화면 OCR 라인들에서 인식된 아이템들의 시세를 한 번에 조회.
+   * 화면 OCR 라인들에서 인식된 아이템들의 시세를 GGG 거래소에서 한 번에 조회.
    * 수량×단가 합계 기준 비싼 순으로 정렬해 반환.
-   * @returns {{scan:true, items:Array<{qty:number, record:object}>, ref:object, reason?:string}}
+   * @param {string[]} ocrLines  OCR 인식 라인들
+   * @param {(rec:object)=>Promise<object|null>} [pricer]  시세 조회자(테스트 주입용). 기본=GGG 거래소.
+   * @returns {Promise<{scan:true, items:Array<{qty:number, record:object, live:object}>, ref:object, partial?:boolean, reason?:string}>}
    */
-  scanRecipe(ocrLines) {
+  async scanRecipe(ocrLines, pricer) {
     if (!this.catalog) return { scan: true, items: [], reason: '준비 중' };
+    const price = pricer || ((rec) => this._priceRecord(rec));
     const parsed = parseRecipeLines(ocrLines);
     const matched = [];
     for (const { qty, name, explicit } of parsed) {
@@ -240,18 +503,39 @@ class Store extends EventEmitter {
     // (수량 없이 화면에 보이는 다른 아이템 이름은 explicit=false 라 걸러진다)
     const chosen = matched.filter((m) => m.explicit);
 
-    const items = [];
+    const unique = [];
     const seen = new Set();
     for (const m of chosen) {
-      const key = m.record.categoryKey + '|' + m.record.enNorm;
+      // 이름+수량 기준 중복제거: 같은 아이템이라도 수량이 다르면(예: 6x·4x 대장장이의 숫돌)
+      // 별개 행으로 유지한다. 진짜 OCR 중복(같은 줄이 여러 타일/배율에서 읽힘)은 수량까지
+      // 같으므로 그대로 합쳐진다.
+      const key = m.record.categoryKey + '|' + m.record.enNorm + '|' + m.qty;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({ qty: m.qty, record: m.record });
+      unique.push({ qty: m.qty, record: m.record });
     }
-    items.sort(
-      (a, b) => b.qty * (b.record.valueDivine || 0) - a.qty * (a.record.valueDivine || 0)
+
+    // GGG 레이트리밋·지연 한계 → 상위 MAX_SCAN_PRICE 건만 실시간 조회.
+    const capped = unique.slice(0, MAX_SCAN_PRICE);
+    const partial = unique.length > capped.length;
+
+    // 동시 조회: ggg 내부 스로틀이 버킷별로 직렬화하므로 안전.
+    // (search/fetch 가 다른 버킷이라 아이템 간 검색-상세가 겹쳐 총 시간이 단축된다)
+    const priced = await Promise.all(
+      capped.map(async (it) => {
+        let live = null;
+        try {
+          live = await price(it.record);
+        } catch (e) {
+          /* 개별 실패는 제외 */
+        }
+        return live && live.exalted != null ? { qty: it.qty, record: withLivePrice(it.record, live), live } : null;
+      })
     );
-    return { scan: true, items, ref: this.catalog.ref };
+
+    const items = priced.filter(Boolean);
+    items.sort((a, b) => b.qty * (b.live.exalted || 0) - a.qty * (a.live.exalted || 0));
+    return { scan: true, items, ref: this.catalog.ref, partial };
   }
 
   /**

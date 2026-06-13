@@ -9,10 +9,51 @@ const { looksLikeItem } = require('./services/itemtext');
 
 const HOTKEY = 'F9'; // 단일 아이템(호버) 시세
 const SCAN_HOTKEY = 'F10'; // 화면 OCR 다중 시세 스캔
+const PRICER_HOTKEY = 'Shift+F9'; // 인터랙티브 옵션(모드) 선택 시세
 const POLL_BUDGET_MS = 900;
 const POLL_INTERVAL_MS = 40;
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 호버한 아이템 텍스트를 비파괴적으로 가져온다(클립보드 복원).
+ * 게임에 Ctrl+C 전송 → 클립보드 변화 폴링 → 아이템 형식이면 채택 → 원본 복원.
+ * @returns {Promise<{text:string, sendErr:Error|null, before:string}>}
+ */
+async function grabItemText() {
+  const before = clipboard.readText();
+  let sendErr = null;
+  try {
+    await sendCtrlC();
+  } catch (e) {
+    sendErr = e; // 키 전송 실패해도 수동 폴백으로 진행
+  }
+  let text = '';
+  const start = Date.now();
+  while (Date.now() - start < POLL_BUDGET_MS) {
+    await delay(POLL_INTERVAL_MS);
+    const cur = clipboard.readText();
+    if (cur && cur !== before) {
+      text = cur;
+      break;
+    }
+  }
+  // 수동 폴백: 변화 없어도 현재 클립보드가 아이템이면 사용
+  if (!looksLikeItem(text)) {
+    const cur = clipboard.readText();
+    if (looksLikeItem(cur)) text = cur;
+  }
+  // 사용자 클립보드 복원
+  try {
+    if (clipboard.readText() !== before) {
+      if (before) clipboard.writeText(before);
+      else clipboard.clear();
+    }
+  } catch (e) {
+    /* noop */
+  }
+  return { text, sendErr, before };
+}
 
 /** 콘솔 + 파일(userData/f9-debug.log) 동시 로깅 — 터미널을 못 봐도 진단 가능하게. */
 function dbg(msg) {
@@ -41,40 +82,10 @@ async function runPriceCheck(store, overlay) {
     return;
   }
 
-  const before = clipboard.readText();
+  // 클립보드 폴링(최대 ~900ms) 동안 로딩 스피너 표시. 결과가 나오면 곧 교체된다.
+  overlay.show(point, { loading: true });
 
-  let sendErr = null;
-  try {
-    await sendCtrlC();
-  } catch (e) {
-    sendErr = e; // 키 전송 실패해도 아래 수동 폴백으로 진행
-  }
-
-  let text = '';
-  const start = Date.now();
-  while (Date.now() - start < POLL_BUDGET_MS) {
-    await delay(POLL_INTERVAL_MS);
-    const cur = clipboard.readText();
-    if (cur && cur !== before) {
-      text = cur;
-      break;
-    }
-  }
-  // 수동 폴백: 변화가 없어도 현재 클립보드가 아이템이면 사용
-  if (!looksLikeItem(text)) {
-    const cur = clipboard.readText();
-    if (looksLikeItem(cur)) text = cur;
-  }
-
-  // 사용자 클립보드 복원
-  try {
-    if (clipboard.readText() !== before) {
-      if (before) clipboard.writeText(before);
-      else clipboard.clear();
-    }
-  } catch (e) {
-    /* noop */
-  }
+  const { text, sendErr } = await grabItemText();
 
   // 복사 실패(아이템 형식 아님) vs 시세 없음(아이템 인식했으나 미집계) 구분
   let result;
@@ -82,7 +93,7 @@ async function runPriceCheck(store, overlay) {
   if (!copied) {
     result = { found: false, reason: '복사 실패' };
   } else {
-    result = store.priceCheck(text);
+    result = await store.priceCheck(text);
     if (!result.found) result.reason = '시세 없음';
   }
 
@@ -107,14 +118,19 @@ async function runScan(store, overlay) {
   }
   overlay.hide(); // 오버레이가 캡처에 찍히지 않도록
   try {
-    const { lines, noLang, dim } = await scanScreen();
+    // 캡처가 끝난 뒤에만 로딩 스피너 표시(캡처에 스피너가 찍히지 않게).
+    const { lines, noLang, dim, lang } = await scanScreen({
+      onCaptured: () => overlay.show(screen.getCursorScreenPoint(), { loading: true }),
+    });
     if (noLang) {
       dbg('[F10] OCR 언어(한글) 없음');
       overlay.show(screen.getCursorScreenPoint(), { scan: true, items: [], reason: '한글 OCR 없음' });
       return;
     }
-    const res = store.scanRecipe(lines);
-    dbg(`[F10] scan ${dim || '?'} lines=${lines.length} matched=${res.items.length}`);
+    const res = await store.scanRecipe(lines);
+    dbg(
+      `[F10] scan ${dim || '?'} lang=${lang || '?'} lines=${lines.length} priced=${res.items.length}${res.partial ? '(부분)' : ''}`
+    );
     overlay.show(screen.getCursorScreenPoint(), res);
   } catch (e) {
     dbg('[F10] scan 실패: ' + (e && e.message ? e.message : e));
@@ -122,7 +138,37 @@ async function runScan(store, overlay) {
   }
 }
 
-function setupHotkey(store, overlay) {
+/**
+ * Shift+F9 인터랙티브 옵션 시세: 호버 아이템 텍스트 → 모드 파싱 →
+ * 포커스 가능한 창에서 사용자가 옵션을 골라 동급이상 시세 검색.
+ */
+async function runPricer(store, overlay, pricer) {
+  if (!pricer) return;
+  const point = screen.getCursorScreenPoint();
+  if (!store.catalog) {
+    overlay.show(point, { found: false, reason: '준비 중' });
+    return;
+  }
+  // 클립보드 폴링 동안 빠른 로딩 표시(스탯사전 첫 로드 시 수 초 걸릴 수 있음).
+  overlay.show(point, { loading: true });
+  const { text } = await grabItemText();
+  if (!looksLikeItem(text)) {
+    dbg('[ShiftF9] 아이템 복사 실패');
+    overlay.show(point, { found: false, reason: '복사 실패' });
+    return;
+  }
+  const item = await store.inspectItem(text);
+  if (!item || !item.mods || !item.mods.length) {
+    dbg(`[ShiftF9] 옵션 없음 rarity=${item ? item.rarity : '?'}`);
+    overlay.show(point, { found: false, reason: '옵션 아이템 아님' });
+    return;
+  }
+  dbg(`[ShiftF9] fired rarity=${item.rarity} mods=${item.mods.length}`);
+  overlay.hide(); // 빠른 로딩 오버레이 닫고 인터랙티브 창으로
+  pricer.show(point, item);
+}
+
+function setupHotkey(store, overlay, pricer) {
   if (process.platform !== 'win32') return false;
 
   let running9 = false;
@@ -148,6 +194,18 @@ function setupHotkey(store, overlay) {
       });
   });
   dbg(`[hotkey] ${SCAN_HOTKEY} 등록 ${okScan ? '성공' : '실패'}`);
+
+  let runningP = false;
+  const okPricer = globalShortcut.register(PRICER_HOTKEY, () => {
+    if (runningP) return;
+    runningP = true;
+    runPricer(store, overlay, pricer)
+      .catch((e) => console.error('[hotkey] 옵션 시세 실패:', e))
+      .finally(() => {
+        runningP = false;
+      });
+  });
+  dbg(`[hotkey] ${PRICER_HOTKEY} 등록 ${okPricer ? '성공' : '실패'}`);
 
   return ok;
 }

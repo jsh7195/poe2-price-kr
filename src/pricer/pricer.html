@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src https: data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none';" />
+    <title>옵션 시세</title>
+    <link rel="stylesheet" href="pricer.css" />
+  </head>
+  <body>
+    <header class="bar" id="bar">
+      <span class="bar-title">옵션 시세 검색</span>
+      <button class="bar-close" id="close" title="닫기">✕</button>
+    </header>
+
+    <section class="item" id="item">
+      <div class="item-name" id="itemName">아이템 없음</div>
+      <div class="item-sub" id="itemSub"></div>
+    </section>
+
+    <section class="mods" id="mods"></section>
+
+    <footer class="foot">
+      <button class="search-btn" id="search">이 옵션으로 검색</button>
+      <div class="result" id="result"></div>
+    </footer>
+
+    <script src="pricer.js"></script>
+  </body>
+</html>

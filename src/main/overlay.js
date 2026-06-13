@@ -66,11 +66,14 @@ class Overlay {
   }
 
   _sizeFor(payload) {
+    if (payload && payload.loading) return { w: 150, h: 60 };
     if (payload && payload.scan) {
       const n = (payload.items || []).length;
       if (!n) return { w: 240, h: 84 };
       return { w: 344, h: 16 + Math.min(n, 9) * 31 + 12 };
     }
+    // 레어 옵션검색은 "옵션 N개 기준" 한 줄이 더 붙는다 → 여유 높이.
+    if (payload && payload.subnote) return { w: WIDTH, h: HEIGHT + 18 };
     return { w: WIDTH, h: HEIGHT };
   }
 
@@ -102,7 +105,11 @@ class Overlay {
     this.win.showInactive(); // 포커스 빼앗지 않음
     this.win.moveTop();
     clearTimeout(this.hideTimer);
-    const hideMs = payload && payload.scan ? 8000 : AUTO_HIDE_MS; // 스캔은 더 오래
+    // 로딩은 결과가 곧 교체하므로 길게 유지한다. F10 = OCR + GGG 실시간 조회(여러 아이템)
+    // 라 최대 ~30초까지 걸릴 수 있어 넉넉히. 스캔 결과는 목록을 읽을 시간을 준다.
+    let hideMs = AUTO_HIDE_MS;
+    if (payload && payload.loading) hideMs = 40000;
+    else if (payload && payload.scan) hideMs = 12000;
     this.hideTimer = setTimeout(() => this.hide(), hideMs);
   }
 

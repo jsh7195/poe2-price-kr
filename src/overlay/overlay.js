@@ -6,6 +6,7 @@ const card = document.getElementById('card');
 const nameEl = document.getElementById('name');
 const rowsEl = document.getElementById('rows');
 const noitemEl = document.getElementById('noitem');
+const loadingEl = document.getElementById('loading');
 
 function fmtNum(n) {
   if (n == null || !isFinite(n)) return '–';
@@ -76,6 +77,17 @@ function showNoItem(text) {
 
 function render(payload) {
   rowsEl.classList.remove('scan');
+  loadingEl.classList.add('hidden');
+  card.classList.remove('compact');
+  if (payload && payload.loading) {
+    nameEl.textContent = '';
+    rowsEl.replaceChildren();
+    noitemEl.classList.add('hidden');
+    loadingEl.classList.remove('hidden');
+    card.classList.add('compact'); // 내용 크기로 → 글자 잘림 방지
+    card.classList.remove('hidden');
+    return;
+  }
   if (payload && payload.scan) {
     renderScan(payload);
     return;
@@ -111,11 +123,19 @@ function render(payload) {
   rowsEl.replaceChildren();
   rowsEl.appendChild(vrow(primary, 'primary'));
   if (secondary) rowsEl.appendChild(vrow(secondary, 'secondary'));
-  if (rec.change7d != null && Math.abs(rec.change7d) >= 1) {
-    const ch = document.createElement('div');
-    ch.className = 'change ' + (rec.change7d >= 0 ? 'up' : 'down');
-    ch.textContent = (rec.change7d >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(rec.change7d)) + '%';
-    rowsEl.appendChild(ch);
+  // 레어 옵션검색이면 "옵션 N/M개 기준" 표기(근사 동급가임을 명확히).
+  if (payload.subnote) {
+    const sn = document.createElement('div');
+    sn.className = 'listings';
+    sn.textContent = payload.subnote;
+    rowsEl.appendChild(sn);
+  }
+  // GGG 거래소 실매물 수(신뢰 신호). ninja 7일 변동은 더 이상 표시하지 않는다.
+  if (rec.listingCount != null && rec.listingCount > 0) {
+    const lc = document.createElement('div');
+    lc.className = 'listings';
+    lc.textContent = '거래소 ' + (rec.listingCount >= 100 ? '100+' : rec.listingCount) + '개';
+    rowsEl.appendChild(lc);
   }
   card.classList.remove('hidden');
 }

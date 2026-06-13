@@ -24,6 +24,23 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# DPI 인식 강제: powershell 은 기본 DPI 비인식이라 배율 >100% 화면에서 CopyFromScreen 이
+# 축소·흐릿한 가상 해상도를 캡처한다 → OCR 실패. 실제 픽셀을 캡처하도록 캡처 전에 설정.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class PoeDpi {
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+  [DllImport("shcore.dll")] public static extern int SetProcessDpiAwareness(int value);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  public static void Apply() {
+    try { if (SetProcessDpiAwarenessContext((IntPtr)(-4))) { return; } } catch {}
+    try { SetProcessDpiAwareness(2); return; } catch {}
+    try { SetProcessDPIAware(); } catch {}
+  }
+}
+'@
+[PoeDpi]::Apply()
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -31,9 +48,19 @@ $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-O
 function Await($op, $type) { $t = $asTaskGeneric.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
 [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime] | Out-Null
 [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime] | Out-Null
+[Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime] | Out-Null
 [Windows.Media.Ocr.OcrEngine, Windows.Media, ContentType = WindowsRuntime] | Out-Null
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+# 한글 OCR 엔진을 명시적으로 우선 시도(언어팩이 있으면). 없으면 사용자 프로필 언어로 폴백.
+$engine = $null
+try {
+  $koLang = [Windows.Globalization.Language]::new('ko')
+  if ([Windows.Media.Ocr.OcrEngine]::IsLanguageSupported($koLang)) {
+    $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($koLang)
+  }
+} catch {}
+if ($null -eq $engine) { $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() }
 if ($null -eq $engine) { Write-Output '__NO_OCR_LANG__'; exit 0 }
+Write-Output ('__OCR_LANG__ ' + $engine.RecognizerLanguage.LanguageTag)
 $max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
 $pos = [System.Windows.Forms.Cursor]::Position
 $scr = [System.Windows.Forms.Screen]::FromPoint($pos)
@@ -43,6 +70,8 @@ $full = New-Object System.Drawing.Bitmap $b.Width, $b.Height
 $g = [System.Drawing.Graphics]::FromImage($full)
 $g.CopyFromScreen($b.X, $b.Y, 0, 0, $full.Size)
 $g.Dispose()
+# 캡처 완료 신호: 메인이 이 시점부터 로딩 오버레이를 띄워도 캡처에 안 찍힌다.
+Write-Output '__CAPTURED__'
 $tmp = [System.IO.Path]::Combine($env:TEMP, 'poe2_ocr_scan.png')
 function OcrBitmap($bitmap) {
   $bitmap.Save($tmp, [System.Drawing.Imaging.ImageFormat]::Png)
@@ -87,9 +116,12 @@ $full.Dispose()
 `;
 
 /**
- * @returns {Promise<{lines:string[], noLang:boolean, dim:string, err:string}>}
+ * @param {{timeoutMs?:number, onCaptured?:()=>void}} [opts]
+ *   onCaptured: 화면 캡처가 끝난 순간 호출(이후 로딩 오버레이를 띄워도 캡처에 안 찍힘).
+ * @returns {Promise<{lines:string[], noLang:boolean, dim:string, lang:string, err:string}>}
  */
-function scanScreen(timeoutMs = 22000) {
+function scanScreen(opts = {}) {
+  const { timeoutMs = 22000, onCaptured } = opts;
   return new Promise((resolve, reject) => {
     if (process.platform !== 'win32') {
       reject(new Error('OCR 스캔은 Windows 전용'));
@@ -101,27 +133,40 @@ function scanScreen(timeoutMs = 22000) {
     });
     let out = '';
     let err = '';
+    let captureSignaled = false;
     const timer = setTimeout(() => {
       ps.kill();
       reject(new Error('OCR 시간초과'));
     }, timeoutMs);
     ps.stdout.setEncoding('utf8');
-    ps.stdout.on('data', (d) => (out += d));
+    ps.stdout.on('data', (d) => {
+      out += d;
+      // 캡처 완료 마커가 스트림에 보이면 즉시 콜백(로딩 표시 트리거).
+      if (!captureSignaled && out.includes('__CAPTURED__')) {
+        captureSignaled = true;
+        if (typeof onCaptured === 'function') {
+          try { onCaptured(); } catch (_) { /* noop */ }
+        }
+      }
+    });
     ps.stderr.setEncoding('utf8');
     ps.stderr.on('data', (d) => (err += d));
     ps.on('close', () => {
       clearTimeout(timer);
       const raw = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       let dim = '';
+      let lang = '';
       let noLang = false;
       const lines = [];
       for (const l of raw) {
         if (l === '__NO_OCR_LANG__') { noLang = true; continue; }
+        if (l === '__CAPTURED__') { continue; }
         if (l.startsWith('__OCR_DIM__')) { dim = l.replace('__OCR_DIM__', '').trim(); continue; }
+        if (l.startsWith('__OCR_LANG__')) { lang = l.replace('__OCR_LANG__', '').trim(); continue; }
         lines.push(l);
       }
       // 여러 배율/타일 패스의 중복 라인을 합친다.
-      resolve({ lines: [...new Set(lines)], noLang, dim, err });
+      resolve({ lines: [...new Set(lines)], noLang, dim, lang, err });
     });
     ps.on('error', (e) => {
       clearTimeout(timer);

@@ -29,6 +29,7 @@ let ref = null; // 기준 통화(divine/exalted 아이콘)
 let lastLeaguesKey = '';
 let currentQuery = '';
 let lastStatus = null; // 신고 버튼이 참조할 최근 상태(메시지·카테고리 오류)
+let favorites = []; // 즐겨찾기(메인창 워치리스트)
 
 // ---------- 포맷 유틸 ----------
 function fmtNum(n) {
@@ -147,26 +148,259 @@ function rowEl(rec) {
 
   const valWrap = document.createElement('div');
   valWrap.className = 'row-value';
-  const { primary, secondary } = valueParts(rec);
-  if (primary) valWrap.appendChild(valueLine(primary, 'val-primary'));
-  if (secondary) valWrap.appendChild(valueLine(secondary, 'val-secondary'));
-  if (!primary) {
-    const none = document.createElement('div');
-    none.className = 'val-secondary';
-    none.textContent = '시세 없음';
-    valWrap.appendChild(none);
-  }
-  if (rec.change7d != null && Math.abs(rec.change7d) >= 1) {
-    const ch = document.createElement('div');
-    ch.className = 'change ' + (rec.change7d >= 0 ? 'up' : 'down');
-    ch.textContent = (rec.change7d >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(rec.change7d)) + '%';
-    valWrap.appendChild(ch);
+  if (isUniqueRec(rec)) {
+    // 유니크(장착 장비) → 클릭 시 GGG 거래소 실매물 조회(목록 전체 라이브는 레이트리밋).
+    renderRowPrice(valWrap, rec, 'idle');
+  } else {
+    // 화폐/룬/우상/소모품 → ninja 집계값 인라인(즉시).
+    renderRowPrice(valWrap, rec, 'done', {
+      exalted: rec.valueExalted, divine: rec.valueDivine, listingCount: null, change7d: rec.change7d,
+    });
   }
 
   row.appendChild(icon);
   row.appendChild(main);
   row.appendChild(valWrap);
+  row.appendChild(starButton(rec));
   return row;
+}
+
+function isUniqueRec(rec) {
+  return !!(rec.categoryKey && typeof rec.categoryKey === 'string' && rec.categoryKey.startsWith('unique'));
+}
+
+// ---------- 즐겨찾기 ----------
+function catKey(rec) {
+  return 'cat:' + [rec.categoryKey, rec.enNorm, rec.baseType || '', rec.corrupted ? 1 : 0].join('|');
+}
+function favDescriptor(rec) {
+  return {
+    en: rec.en, enNorm: rec.enNorm, categoryKey: rec.categoryKey,
+    baseType: rec.baseType || '', corrupted: !!rec.corrupted,
+    kr: rec.kr, icon: rec.icon || '', labelKr: rec.labelKr || '',
+  };
+}
+function starButton(rec) {
+  const b = document.createElement('button');
+  b.className = 'star';
+  b.type = 'button';
+  const key = catKey(rec);
+  const sync = () => {
+    const on = favorites.some((f) => f.key === key);
+    b.textContent = on ? '★' : '☆';
+    b.classList.toggle('on', on);
+    b.title = on ? '즐겨찾기 해제' : '즐겨찾기에 추가';
+  };
+  sync();
+  b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    const on = favorites.some((f) => f.key === key);
+    try {
+      favorites = on
+        ? await window.api.favorites.remove(key)
+        : await window.api.favorites.addCatalog(favDescriptor(rec));
+    } catch (err) {
+      /* noop */
+    }
+    b.disabled = false;
+    sync();
+  });
+  return b;
+}
+
+function renderFavPrice(val, lp) {
+  val.replaceChildren();
+  if (!lp || lp.empty || lp.exalted == null) {
+    const e = document.createElement('div');
+    e.className = 'val-secondary';
+    e.textContent = lp && lp.empty ? '매물 없음' : '미조회';
+    val.appendChild(e);
+    return;
+  }
+  const { primary, secondary } = valueParts({ valueDivine: lp.divine, valueExalted: lp.exalted });
+  if (primary) val.appendChild(valueLine(primary, 'val-primary'));
+  if (secondary) val.appendChild(valueLine(secondary, 'val-secondary'));
+  if (lp.listingCount) {
+    const lc = document.createElement('div');
+    lc.className = 'row-listings';
+    lc.textContent = '거래소 ' + (lp.listingCount >= 100 ? '100+' : lp.listingCount) + '개';
+    val.appendChild(lc);
+  }
+}
+
+function favRow(f) {
+  const row = document.createElement('div');
+  row.className = 'row fav-row';
+
+  const icon = document.createElement('img');
+  icon.className = 'row-icon';
+  icon.loading = 'lazy';
+  icon.src = f.icon || '';
+  icon.alt = '';
+  if (!f.icon) icon.classList.add('broken');
+
+  const main = document.createElement('div');
+  main.className = 'row-main';
+  const kr = document.createElement('div');
+  kr.className = 'row-kr';
+  kr.textContent = f.kr;
+  const sub = document.createElement('div');
+  sub.className = 'row-en';
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.textContent = f.kind === 'rare' ? '레어 옵션' : f.labelKr || '';
+  sub.appendChild(tag);
+  const detail = f.kind === 'rare' && f.mods && f.mods.length ? f.mods.join(' · ') : f.base || '';
+  if (detail) sub.appendChild(document.createTextNode(' ' + detail));
+  main.append(kr, sub);
+
+  const val = document.createElement('div');
+  val.className = 'row-value';
+  renderFavPrice(val, f.lastPrice);
+
+  const actions = document.createElement('div');
+  actions.className = 'fav-actions';
+  const rb = document.createElement('button');
+  rb.className = 'fav-btn';
+  rb.type = 'button';
+  rb.textContent = '↻';
+  rb.title = '시세 갱신';
+  rb.addEventListener('click', async () => {
+    rb.disabled = true;
+    val.replaceChildren();
+    const l = document.createElement('span');
+    l.className = 'price-loading';
+    l.textContent = '조회 중…';
+    val.appendChild(l);
+    try {
+      favorites = await window.api.favorites.reprice(f.key);
+    } catch (e) {
+      /* noop */
+    }
+    if (!currentQuery) renderFavorites();
+  });
+  const xb = document.createElement('button');
+  xb.className = 'fav-btn';
+  xb.type = 'button';
+  xb.textContent = '✕';
+  xb.title = '삭제';
+  xb.addEventListener('click', async () => {
+    try {
+      favorites = await window.api.favorites.remove(f.key);
+    } catch (e) {
+      /* noop */
+    }
+    if (!currentQuery) renderFavorites();
+  });
+  actions.append(rb, xb);
+
+  row.append(icon, main, val, actions);
+  return row;
+}
+
+function renderFavorites() {
+  el.results.replaceChildren();
+  el.hint.classList.toggle('is-hidden', favorites.length > 0);
+  if (!favorites.length) return;
+  const head = document.createElement('div');
+  head.className = 'fav-head';
+  const title = document.createElement('span');
+  title.className = 'fav-title';
+  title.textContent = '⭐ 즐겨찾기 ' + favorites.length;
+  const refreshAll = document.createElement('button');
+  refreshAll.className = 'fav-refresh-all';
+  refreshAll.type = 'button';
+  refreshAll.textContent = '전체 새로고침';
+  refreshAll.addEventListener('click', async () => {
+    refreshAll.disabled = true;
+    for (const f of [...favorites]) {
+      try {
+        favorites = await window.api.favorites.reprice(f.key);
+      } catch (e) {
+        /* noop */
+      }
+    }
+    refreshAll.disabled = false;
+    if (!currentQuery) renderFavorites();
+  });
+  head.append(title, refreshAll);
+  el.results.appendChild(head);
+  const frag = document.createDocumentFragment();
+  for (const f of favorites) frag.appendChild(favRow(f));
+  el.results.appendChild(frag);
+}
+
+/** GGG 조회에 보낼 최소 레코드 기술자(검색 쿼리 구성에 필요한 필드만). */
+function priceDescriptor(rec) {
+  return {
+    en: rec.en,
+    enNorm: rec.enNorm,
+    categoryKey: rec.categoryKey,
+    baseType: rec.baseType || '',
+    corrupted: !!rec.corrupted,
+  };
+}
+
+/** 행 시세 영역을 상태별로 렌더: idle(조회 버튼) → loading → done(가격/없음). */
+function renderRowPrice(valWrap, rec, state, price) {
+  valWrap.replaceChildren();
+  if (state === 'loading') {
+    const s = document.createElement('div');
+    s.className = 'price-loading';
+    s.textContent = '조회 중…';
+    valWrap.appendChild(s);
+    return;
+  }
+  if (state === 'done') {
+    if (price && price.rateLimited) {
+      const rl = document.createElement('div');
+      rl.className = 'val-secondary';
+      rl.textContent = '조회 한도 — 잠시 후';
+      valWrap.appendChild(rl);
+      return;
+    }
+    const { primary, secondary } = price
+      ? valueParts({ valueDivine: price.divine, valueExalted: price.exalted })
+      : { primary: null, secondary: null };
+    if (primary) valWrap.appendChild(valueLine(primary, 'val-primary'));
+    if (secondary) valWrap.appendChild(valueLine(secondary, 'val-secondary'));
+    if (!primary) {
+      const none = document.createElement('div');
+      none.className = 'val-secondary';
+      none.textContent = '시세 없음';
+      valWrap.appendChild(none);
+    } else if (price.listingCount) {
+      const lc = document.createElement('div');
+      lc.className = 'row-listings';
+      lc.textContent = '거래소 ' + (price.listingCount >= 100 ? '100+' : price.listingCount) + '개';
+      valWrap.appendChild(lc);
+    } else if (price.change7d != null && Math.abs(price.change7d) >= 1) {
+      // ninja commodity 7일 변동
+      const ch = document.createElement('div');
+      ch.className = 'change ' + (price.change7d >= 0 ? 'up' : 'down');
+      ch.textContent = (price.change7d >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(price.change7d)) + '%';
+      valWrap.appendChild(ch);
+    }
+    return;
+  }
+  // idle: 클릭하여 실시간 조회
+  const btn = document.createElement('button');
+  btn.className = 'price-btn';
+  btn.type = 'button';
+  btn.textContent = '시세 조회';
+  btn.addEventListener('click', async () => {
+    renderRowPrice(valWrap, rec, 'loading');
+    let price = null;
+    try {
+      const r = await window.api.priceItem(priceDescriptor(rec));
+      price = r && r.ok ? r.price : null;
+    } catch (e) {
+      price = null;
+    }
+    renderRowPrice(valWrap, rec, 'done', price);
+  });
+  valWrap.appendChild(btn);
 }
 
 function renderResults(list, query) {
@@ -198,7 +432,7 @@ async function doSearch() {
   const q = el.search.value.trim();
   currentQuery = q;
   el.clear.classList.toggle('hidden', !q);
-  if (!q) { renderResults([], ''); return; }
+  if (!q) { el.hint.classList.remove('is-hidden'); renderFavorites(); return; }
   try {
     const res = await window.api.search(q);
     // 입력이 그 사이 바뀌었으면 무시(레이스 방지)
@@ -358,6 +592,16 @@ function applyUpdate(s) {
 el.checkUpdate.addEventListener('click', () => window.api.checkUpdate());
 window.api.onUpdateStatus(applyUpdate);
 window.api.getVersion().then((v) => { if (v) el.appVersion.textContent = 'v' + v; });
+
+// ---------- 즐겨찾기 초기 로드 + 실시간 구독 ----------
+window.api.onFavorites((list) => {
+  favorites = list || [];
+  if (!currentQuery) renderFavorites();
+});
+window.api.favorites.list().then((list) => {
+  favorites = list || [];
+  if (!currentQuery) renderFavorites();
+});
 
 // ---------- 시작 ----------
 window.api.onStatus(applyStatus);

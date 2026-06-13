@@ -49,6 +49,60 @@ async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries
 }
 
 /**
+ * JSON POST. GGG trade2 검색 등에 사용.
+ * 429(레이트리밋)는 Retry-After 헤더만큼 대기 후 재시도한다.
+ * @returns {Promise<any>} 파싱된 JSON
+ */
+async function postJson(url, body, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries } = {}) {
+  const payload = JSON.stringify(body || {});
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept: 'application/json',
+          'Accept-Language': 'ko,en;q=0.8',
+          'Content-Type': 'application/json',
+        },
+        body: payload,
+      });
+      if (res.status === 429) {
+        // 레이트리밋: Retry-After(초) 만큼 대기 후 재시도.
+        const ra = Number(res.headers.get('retry-after')) || 5;
+        lastErr = new Error(`HTTP 429 for ${url}`);
+        lastErr.status = 429;
+        if (attempt < retries) {
+          await sleep(Math.min(ra, 15) * 1000);
+          continue;
+        }
+        throw lastErr;
+      }
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status} for ${url}`);
+        err.status = res.status;
+        // 400/404 등은 재시도 무의미(429 는 위에서 처리) → 즉시 던진다.
+        if (res.status >= 400 && res.status < 500) throw err;
+        lastErr = err;
+      } else {
+        return await res.json();
+      }
+    } catch (e) {
+      lastErr = e;
+      if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (attempt < retries) await sleep(400 * Math.pow(2, attempt));
+  }
+  throw lastErr || new Error(`요청 실패: ${url}`);
+}
+
+/**
  * 동시성 제한 map. 외부 API 부하/레이트리밋 보호.
  */
 async function mapLimit(items, limit, worker) {
@@ -64,4 +118,4 @@ async function mapLimit(items, limit, worker) {
   return results;
 }
 
-module.exports = { getJson, mapLimit, sleep };
+module.exports = { getJson, postJson, mapLimit, sleep };

@@ -10,6 +10,19 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   getStatus: () => ipcRenderer.invoke('app:getStatus'),
   search: (query) => ipcRenderer.invoke('catalog:search', query),
+  priceItem: (rec) => ipcRenderer.invoke('catalog:priceItem', rec),
+  favorites: {
+    list: () => ipcRenderer.invoke('favorites:list'),
+    addCatalog: (rec) => ipcRenderer.invoke('favorites:addCatalog', rec),
+    remove: (key) => ipcRenderer.invoke('favorites:remove', key),
+    reprice: (key) => ipcRenderer.invoke('favorites:reprice', key),
+  },
+  /** 즐겨찾기 변경 구독(인게임에서 담아도 반영). 해제 함수 반환. */
+  onFavorites: (callback) => {
+    const listener = (_evt, list) => callback(list);
+    ipcRenderer.on('app:favorites', listener);
+    return () => ipcRenderer.removeListener('app:favorites', listener);
+  },
   refresh: () => ipcRenderer.invoke('catalog:refresh'),
   setLeague: (name) => ipcRenderer.invoke('league:set', name),
   reportError: (payload) => ipcRenderer.invoke('app:reportError', payload),
