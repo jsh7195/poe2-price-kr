@@ -344,6 +344,23 @@ test('scanRecipe: 맨이름 FHD 오인식(엑잘티드→엑찰티드)도 자모
   assert.equal(res.items[0].record.en, 'Exalted Orb');
 });
 
+test('scanRecipe: 짧은 맨이름 단일 자모 오인식(룬→른)도 흡수(유사도 0.9 미만이어도)', async () => {
+  const store = new Store(os.tmpdir());
+  const rec = (kr, en, cat, vDiv) => ({
+    kr, en, krNorm: normKr(kr), enNorm: normEn(en),
+    categoryKey: cat, labelKr: cat, valueDivine: vDiv, valueExalted: vDiv * 80,
+  });
+  store.catalog = {
+    ref: {},
+    records: [rec('정신 룬', 'Mind Rune', '룬', 0.01), rec('카오스 오브', 'Chaos Orb', '화폐', 0.06)],
+  };
+  // '정신 룬'(3음절)을 '정신 른'으로 오인식 → 자모 유사도 0.889(<0.9)이지만 1글자 차이라 흡수.
+  assert.ok(jamoSimilarity('정신룬', '정신른') < 0.9, '전제: 짧아서 유사도는 0.9 미만');
+  const res = await store.scanRecipe(['정신 른']);
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].record.en, 'Mind Rune');
+});
+
 test('scanRecipe: 화면 잡텍스트 맨이름은 매칭 안 됨', async () => {
   const store = commodityStore();
   const res = await store.scanRecipe(['키워드를 입력하십시오', '인기', '화폐', '거래 한도 초과']);

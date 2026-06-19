@@ -7,7 +7,7 @@ const { fetchLeagues } = require('./leagues');
 const { buildDictionary } = require('./dictionary');
 const { buildCatalog } = require('./catalog');
 const { search, scoreRecord } = require('./search');
-const { normKr, normEn, jamoSimilarity } = require('./normalize');
+const { normKr, normEn, jamoSimilarity, decomposeHangul, levenshtein } = require('./normalize');
 const { extractItemName, parseRecipeLines } = require('./itemtext');
 const { parseItem } = require('./itemparse');
 const { isElevated } = require('./elevation');
@@ -612,8 +612,13 @@ class Store extends EventEmitter {
       if (qKr && rec.krNorm && rec.krNorm === qKr) s = 1000;
       else if (qEn && rec.enNorm && rec.enNorm.length >= 4 && rec.enNorm === qEn) s = 980;
       else if (qKr.length >= 2 && rec.krNorm && rec.krNorm.length >= 2 && Math.abs(rec.krNorm.length - qKr.length) <= 1) {
-        const sim = jamoSimilarity(qKr, rec.krNorm);
-        if (sim >= 0.9) s = 700 + Math.round((sim - 0.9) * 1000);
+        // 자모 단위 비교: 긴 이름은 비례 유사도(≥0.9)로, 짧은 이름은 단일 자모 오인식(룬→른 등,
+        // 비율상 0.9 미만이어도 1글자 차이)까지 흡수. 길이는 ±1 음절로 제한해 과매칭 방지.
+        const da = decomposeHangul(qKr);
+        const db = decomposeHangul(rec.krNorm);
+        const edits = levenshtein(da, db);
+        const sim = 1 - edits / (Math.max(da.length, db.length) || 1);
+        if (sim >= 0.9 || edits <= 1) s = Math.round(600 + sim * 150);
       }
       if (s === -Infinity) continue;
       if (s > bestScore) {
