@@ -149,7 +149,15 @@ function rebuildTrayMenu() {
         },
       },
       { type: 'separator' },
-      { label: '종료', click: () => { isQuiting = true; app.quit(); } },
+      {
+        label: '종료',
+        click: () => {
+          isQuiting = true;
+          app.quit();
+          // 안전망: 어떤 창이 종료를 붙잡아도 확실히 끝나도록(정상 종료되면 이 타이머는 프로세스와 함께 사라짐).
+          setTimeout(() => app.exit(0), 1500);
+        },
+      },
     ])
   );
 }
@@ -246,12 +254,15 @@ function start() {
 
   app.on('before-quit', () => {
     isQuiting = true;
+    // 종료 데드락 방지: 오버레이/옵션시세 창은 close 를 preventDefault(숨김) 하므로,
+    // app.quit() 이 이 창들을 닫으려다 막힌다. 창이 닫히기 전인 이 시점에 미리 파괴해
+    // 종료 시퀀스가 진행되게 한다(파괴는 close 이벤트를 우회).
+    if (overlay) overlay.destroy();
+    if (pricer) pricer.destroy();
   });
 
   app.on('will-quit', () => {
     if (hotkeyController) hotkeyController.teardown();
-    if (overlay) overlay.destroy();
-    if (pricer) pricer.destroy();
     if (tray) tray.destroy();
   });
 }
