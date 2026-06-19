@@ -592,10 +592,11 @@ class Store extends EventEmitter {
   }
 
   /**
-   * 수량 없는 맨이름(화폐 거래소 라벨)에 대한 엄격한 commodity 매칭.
-   * 카탈로그 화이트리스트 + 보수적 임계값으로 화면 잡텍스트의 오매칭을 막는다.
-   *  - 정확 일치(한글/영문) 또는
-   *  - 자모 유사도 ≥0.9 이고 길이도 ±1 음절 이내(FHD 저선명 OCR 1~2자 오인식만 흡수)
+   * 수량 없는 맨이름(화폐 거래소 라벨)에 대한 commodity 매칭.
+   * OCR 오인식은 특정 케이스가 아니라 "글자수에 비례해 여러 글자가 틀리는" 일반적 현상이므로,
+   * 자모 편집거리에 **길이 비례 허용 오차**를 적용한다(짧으면 1자, 길면 더). 카탈로그가
+   * 화이트리스트라 화면 잡텍스트는 걸러지고, 허용 오차를 ~20%로 제한해 등급 변형
+   * (하위/상위/완벽한 …, 접두어가 편집거리를 크게 늘림)은 서로 섞이지 않는다.
    * 유니크(장착 장비)는 제외 — 그건 F9/GGG 실시간 경로가 담당한다.
    * @returns {object|null} commodity 레코드 또는 null.
    */
@@ -603,6 +604,7 @@ class Store extends EventEmitter {
     const qKr = normKr(name);
     const qEn = normEn(name);
     if (qKr.length < 2 && qEn.length < 4) return null;
+    const qJamo = qKr ? decomposeHangul(qKr) : '';
     let best = null;
     let bestScore = -Infinity;
     for (const rec of this.catalog.records) {
@@ -611,14 +613,19 @@ class Store extends EventEmitter {
       let s = -Infinity;
       if (qKr && rec.krNorm && rec.krNorm === qKr) s = 1000;
       else if (qEn && rec.enNorm && rec.enNorm.length >= 4 && rec.enNorm === qEn) s = 980;
-      else if (qKr.length >= 2 && rec.krNorm && rec.krNorm.length >= 2 && Math.abs(rec.krNorm.length - qKr.length) <= 1) {
-        // 자모 단위 비교: 긴 이름은 비례 유사도(≥0.9)로, 짧은 이름은 단일 자모 오인식(룬→른 등,
-        // 비율상 0.9 미만이어도 1글자 차이)까지 흡수. 길이는 ±1 음절로 제한해 과매칭 방지.
-        const da = decomposeHangul(qKr);
-        const db = decomposeHangul(rec.krNorm);
-        const edits = levenshtein(da, db);
-        const sim = 1 - edits / (Math.max(da.length, db.length) || 1);
-        if (sim >= 0.9 || edits <= 1) s = Math.round(600 + sim * 150);
+      else if (
+        qKr.length >= 2 &&
+        rec.krNorm &&
+        rec.krNorm.length >= 2 &&
+        Math.abs(rec.krNorm.length - qKr.length) <= 4 // 음절 길이 사전 필터(편집거리 계산 절약)
+      ) {
+        const rJamo = decomposeHangul(rec.krNorm);
+        const maxLen = Math.max(qJamo.length, rJamo.length) || 1;
+        const edits = levenshtein(qJamo, rJamo);
+        // 허용 오차 = 이름 길이의 ~20%(최소 1). 다중 글자 오인식도 비례해 흡수하되,
+        // 편집거리가 곧 길이차 상한이라 등급 접두어(상위/완벽한 …)는 예산을 넘겨 자연 배제된다.
+        const budget = Math.max(1, Math.round(maxLen * 0.2));
+        if (edits <= budget) s = 800 - Math.round((edits / maxLen) * 300); // 적게 틀릴수록 높은 점수
       }
       if (s === -Infinity) continue;
       if (s > bestScore) {

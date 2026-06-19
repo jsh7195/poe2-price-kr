@@ -361,6 +361,30 @@ test('scanRecipe: 짧은 맨이름 단일 자모 오인식(룬→른)도 흡수(
   assert.equal(res.items[0].record.en, 'Mind Rune');
 });
 
+test('scanRecipe: 맨이름 다중 글자 오인식(길이 비례 허용)도 흡수, 등급 변형은 안 섞임', async () => {
+  const store = new Store(os.tmpdir());
+  const rec = (kr, en, cat, vDiv) => ({
+    kr, en, krNorm: normKr(kr), enNorm: normEn(en),
+    categoryKey: cat, labelKr: cat, valueDivine: vDiv, valueExalted: vDiv * 80,
+  });
+  store.catalog = {
+    ref: {},
+    records: [
+      rec('신성한 오브', 'Divine Orb', '화폐', 1),
+      rec('상위 카오스 오브', 'Greater Chaos Orb', '화폐', 0.5),
+      rec('카오스 오브', 'Chaos Orb', '화폐', 0.06),
+    ],
+  };
+  // 6음절 이름에서 2글자 오인식(성→섬, 브→부) → 길이 비례 허용으로 흡수.
+  const a = await store.scanRecipe(['신섬한 오부']);
+  assert.equal(a.items.length, 1);
+  assert.equal(a.items[0].record.en, 'Divine Orb');
+  // '카오스 오브'는 '상위 카오스 오브'(등급 변형)와 절대 섞이면 안 됨 — 정확 일치 우선.
+  const b = await store.scanRecipe(['카오스 오브']);
+  assert.equal(b.items.length, 1);
+  assert.equal(b.items[0].record.en, 'Chaos Orb');
+});
+
 test('scanRecipe: 화면 잡텍스트 맨이름은 매칭 안 됨', async () => {
   const store = commodityStore();
   const res = await store.scanRecipe(['키워드를 입력하십시오', '인기', '화폐', '거래 한도 초과']);
