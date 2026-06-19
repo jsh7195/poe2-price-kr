@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('api', {
   },
   refresh: () => ipcRenderer.invoke('catalog:refresh'),
   setLeague: (name) => ipcRenderer.invoke('league:set', name),
+  settings: {
+    getHotkeys: () => ipcRenderer.invoke('settings:getHotkeys'),
+    setHotkeys: (map) => ipcRenderer.invoke('settings:setHotkeys', map),
+    resetHotkeys: () => ipcRenderer.invoke('settings:resetHotkeys'),
+  },
   reportError: (payload) => ipcRenderer.invoke('app:reportError', payload),
   testOverlay: () => ipcRenderer.invoke('overlay:test'),
   relaunchElevated: () => ipcRenderer.invoke('app:relaunchElevated'),

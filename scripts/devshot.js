@@ -53,6 +53,16 @@ async function runScreenshots(app, win, store, overlay, outDir) {
       await save(`shot_search_${i}.png`);
     }
 
+    // 단축키 설정 모달
+    await win.webContents.executeJavaScript(
+      `(() => { const s = document.getElementById('search'); s.value=''; s.dispatchEvent(new Event('input',{bubbles:true})); document.getElementById('open-settings').click(); })()`
+    );
+    await delay(700);
+    await save('shot_settings.png');
+    await win.webContents.executeJavaScript(
+      `document.getElementById('settings-cancel').click()`
+    );
+
     // 오버레이(가격 툴팁) 캡처 — 실제 priceCheck 경로를 통해 페이로드 생성
     if (overlay) {
       const saveOverlay = saveOf(overlay.win);
@@ -71,11 +81,23 @@ async function runScreenshots(app, win, store, overlay, outDir) {
       await delay(500);
       await saveOverlay('shot_overlay_noitem.png');
 
-      // 다중(스캔) 오버레이 — 실제 OCR 출력 샘플로
-      const scan = store.scanRecipe(['루형티| 조합', '6x 대장장이의 숫돌', '1)(보호의 합금', 'lx 카오스 오브 니']);
+      // 다중(스캔) 오버레이 — 실제 OCR 출력 샘플로 (조합 목록)
+      const scan = await store.scanRecipe(['루형티| 조합', '6x 대장장이의 숫돌', '1)(보호의 합금', 'lx 카오스 오브 니']);
       overlay.show(point, scan);
       await delay(700);
       await saveOverlay('shot_overlay_scan.png');
+
+      // F10 화폐 거래소: 카탈로그의 화폐류(commodity) 이름들을 수량 없이 한꺼번에(다중 열 격자).
+      const commodityCats = new Set(['currency', 'fragments', 'runes', 'essences', 'soulCores', 'omens']);
+      const names = ((store.catalog && store.catalog.records) || [])
+        .filter((r) => commodityCats.has(r.categoryKey) && (r.valueExalted != null || r.valueDivine != null))
+        .slice(0, 48)
+        .map((r) => r.kr);
+      const currencyScan = await store.scanRecipe(names);
+      console.log('[shot] 화폐 거래소 스캔 인식:', currencyScan.items.length, '종');
+      overlay.show({ x: 360, y: 220 }, currencyScan);
+      await delay(800);
+      await saveOverlay('shot_overlay_currency_board.png');
     }
 
     console.log('[shot] done');

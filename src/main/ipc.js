@@ -2,6 +2,7 @@
 
 const { ipcMain, screen, shell, app } = require('electron');
 const { redact } = require('./services/redact');
+const { DEFAULT_HOTKEYS } = require('./services/accelerator');
 const errorReport = require('./services/errorReport');
 
 // 공개 배포 리포(시크릿 아님 — 자동 신고가 향할 곳).
@@ -11,8 +12,31 @@ const REPORT_REPO = { owner: 'jsh7195', repo: 'poe2-price-kr' };
  * 렌더러 ↔ 메인 IPC 핸들러 등록.
  * 모든 핸들러는 try/catch 로 감싸 렌더러에 일관된 형태로 반환한다.
  */
-function registerIpc(store, overlay, pricer) {
+function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('app:getStatus', () => store.status());
+
+  // --- 설정: 전역 단축키 변경 ---
+  ipcMain.handle('settings:getHotkeys', () => ({
+    hotkeys: hotkeys ? hotkeys.getCurrent() : { ...DEFAULT_HOTKEYS },
+    defaults: { ...DEFAULT_HOTKEYS },
+  }));
+  // 검증·재등록·영속은 컨트롤러가 담당. 무효/중복/등록실패는 결과 객체로 알린다.
+  ipcMain.handle('settings:setHotkeys', async (_evt, map) => {
+    try {
+      if (!hotkeys) return { ok: false, hotkeys: { ...DEFAULT_HOTKEYS } };
+      return await hotkeys.apply(map || {});
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
+  ipcMain.handle('settings:resetHotkeys', async () => {
+    try {
+      if (!hotkeys) return { ok: false, hotkeys: { ...DEFAULT_HOTKEYS } };
+      return await hotkeys.apply({ ...DEFAULT_HOTKEYS });
+    } catch (e) {
+      return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+  });
 
   // --- 인터랙티브 옵션 시세 창(Shift+F9) ---
   // 선택한 옵션 필터로 동급이상 실시세.

@@ -17,15 +17,20 @@ const { redact } = require('./services/redact');
 const { registerIpc } = require('./ipc');
 const { Overlay } = require('./overlay');
 const { Pricer } = require('./pricer');
-const { setupHotkey, teardownHotkey } = require('./hotkey');
+const { createHotkeyController } = require('./hotkey');
 const { setupUpdater } = require('./updater');
 
 const ASSET = (f) => path.join(__dirname, '..', '..', 'assets', f);
+
+// 시세 자동 갱신 주기: 1시간. 화폐는 변동성이 낮아 자주 받을 필요 없고, 백그라운드에서
+// 조용히 최신화한다(첫 로딩이 아니면 전체화면 오버레이는 뜨지 않고 갱신 버튼만 돈다).
+const AUTO_REFRESH_MS = 60 * 60 * 1000;
 
 let mainWindow = null;
 let store = null;
 let overlay = null;
 let pricer = null;
+let hotkeyController = null;
 let tray = null;
 let isQuiting = false;
 let notifiedTray = false;
@@ -171,7 +176,8 @@ function start() {
     pricer = new Pricer(); // Shift+F9 인터랙티브 옵션 시세 창
     pricer.create();
 
-    registerIpc(store, overlay, pricer); // overlay:test, pricer:* 핸들러 포함
+    hotkeyController = createHotkeyController(store, overlay, pricer); // 설정에서 바꿀 수 있는 전역 단축키
+    registerIpc(store, overlay, pricer, hotkeyController); // overlay:test, pricer:*, settings:* 핸들러 포함
 
     // 트레이 모드: 설정이 켜져 있으면 창을 숨긴 채 시작
     const settings = await store.getSettings();
@@ -206,13 +212,20 @@ function start() {
     });
 
     if (process.platform === 'win32' && !process.env.POE_SHOT) {
-      store.setHotkeyOk(setupHotkey(store, overlay, pricer)); // 등록 실패 시 UI 경고
+      const results = await hotkeyController.init(); // 설정된 단축키로 등록
+      store.setHotkeyOk(!!results.price); // 단일 시세(기본 F9) 등록 실패 시 UI 경고
       store.checkElevation(); // 관리자 권한 여부 확인(게임 위 F9용)
     }
     console.log('[main] F9 디버그 로그:', path.join(app.getPath('userData'), 'f9-debug.log'));
 
     mainWindow.webContents.once('did-finish-load', () => {
       store.initialize().catch((err) => console.error('[store] initialize 실패:', err));
+      // 1시간마다 백그라운드 자동 갱신(refresh 는 building 중이면 스스로 무시 → 첫 로딩과 충돌 없음).
+      if (!process.env.POE_SHOT) {
+        setInterval(() => {
+          store.refresh().catch((err) => console.error('[store] 자동 갱신 실패:', err));
+        }, AUTO_REFRESH_MS);
+      }
       if (process.env.POE_SHOT) {
         try {
           const { runScreenshots } = require('../../scripts/devshot');
@@ -236,7 +249,7 @@ function start() {
   });
 
   app.on('will-quit', () => {
-    teardownHotkey();
+    if (hotkeyController) hotkeyController.teardown();
     if (overlay) overlay.destroy();
     if (pricer) pricer.destroy();
     if (tray) tray.destroy();

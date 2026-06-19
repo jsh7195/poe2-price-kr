@@ -19,6 +19,9 @@
           <span class="field-label">리그</span>
           <select id="league" class="select" aria-label="리그 선택"></select>
         </label>
+        <button id="open-settings" class="btn" title="단축키 설정">
+          <span class="btn-icon">⚙</span><span>설정</span>
+        </button>
         <button id="hide-tray" class="btn" title="창을 닫고 트레이에서 계속 실행 (F9·F10 유지)">
           <span class="btn-icon">▼</span><span>트레이로</span>
         </button>
@@ -49,8 +52,8 @@
       </div>
       <p id="hint" class="hint">
         한글 이름을 입력하면 <strong>poe.ninja</strong> 시세(divine · exalted)를 바로 보여줍니다.<br />
-        게임에서 아이템 위에 마우스를 올리고 <kbd>F9</kbd> → 커서 옆에 시세 툴팁이 뜹니다.<br />
-        조합·목록 같은 화면은 <kbd>F10</kbd> → 화면을 읽어 보이는 아이템들의 시세를 한 번에 보여줍니다.
+        게임에서 아이템 위에 마우스를 올리고 <kbd id="kbd-price">F9</kbd> → 커서 옆에 시세 툴팁이 뜹니다.<br />
+        옵션 시세는 <kbd id="kbd-pricer">Shift+F9</kbd>, 조합·목록·<strong>화폐 거래소</strong> 화면은 <kbd id="kbd-scan">F10</kbd> → 화면을 읽어 시세를 한 번에 보여줍니다.
       </p>
       <div id="admin-hint" class="admin-hint hidden">
         <span>⚠ 게임이 <strong>관리자 권한</strong>으로 실행 중이면, 이 앱도 관리자 권한이어야 게임 위에서 F9가 동작합니다.</span>
@@ -78,6 +81,38 @@
       <div id="overlay-msg" class="overlay-msg">데이터 불러오는 중…</div>
     </div>
 
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="settings-title" class="modal-title">⚙ 단축키 설정</h2>
+          <button id="settings-close" class="modal-x" title="닫기" aria-label="닫기">×</button>
+        </div>
+        <p class="modal-desc">바꿀 키 칸을 클릭한 뒤 원하는 키를 누르세요. (펑션키 F1~F24, 또는 Ctrl·Alt·Shift + 글자)</p>
+        <div class="hk-list">
+          <div class="hk-row">
+            <div class="hk-info"><span class="hk-name">단일 시세</span><span class="hk-sub">아이템 위에서 커서 옆 시세</span></div>
+            <button class="hk-capture" id="hk-price" type="button" data-action="price"></button>
+          </div>
+          <div class="hk-row">
+            <div class="hk-info"><span class="hk-name">화면 스캔</span><span class="hk-sub">조합·목록·화폐 거래소 한 번에</span></div>
+            <button class="hk-capture" id="hk-scan" type="button" data-action="scan"></button>
+          </div>
+          <div class="hk-row">
+            <div class="hk-info"><span class="hk-name">옵션 시세</span><span class="hk-sub">레어 아이템 옵션 골라 검색</span></div>
+            <button class="hk-capture" id="hk-pricer" type="button" data-action="pricer"></button>
+          </div>
+        </div>
+        <p id="settings-msg" class="settings-msg"></p>
+        <div class="modal-actions">
+          <button id="settings-reset" class="btn" type="button">기본값 복원</button>
+          <span class="modal-spacer"></span>
+          <button id="settings-cancel" class="btn" type="button">취소</button>
+          <button id="settings-save" class="btn-admin" type="button">저장</button>
+        </div>
+      </div>
+    </div>
+
     <script src="app.js"></script>
+    <script src="settings.js"></script>
   </body>
 </html>

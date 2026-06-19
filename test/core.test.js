@@ -9,6 +9,7 @@ const { buildFromRaw } = require('../src/main/services/dictionary');
 const { search } = require('../src/main/services/search');
 const { toRecord, dedupe } = require('../src/main/services/catalog');
 const { extractItemName, looksLikeItem, parseRecipeLines } = require('../src/main/services/itemtext');
+const { normalizeAccelerator, isRegisterable, mergeHotkeys, validateHotkeyMap, DEFAULT_HOTKEYS } = require('../src/main/services/accelerator');
 const { Store } = require('../src/main/services/store');
 const ggg = require('../src/main/services/ggg');
 const { redact } = require('../src/main/services/redact');
@@ -172,7 +173,7 @@ const fakePricer = (rec) => ({
   listingCount: 1,
 });
 
-test('scanRecipe: 노이즈 매칭 + 수량 + 비싼순 정렬', async () => {
+test('scanRecipe: 조합행(수량) + 맨이름 화폐 매칭 + 비싼순 정렬', async () => {
   const store = new Store(os.tmpdir());
   const rec = (kr, en, cat, vDiv) => ({
     kr, en, krNorm: normKr(kr), enNorm: normEn(en),
@@ -187,7 +188,7 @@ test('scanRecipe: 노이즈 매칭 + 수량 + 비싼순 정렬', async () => {
       rec('유리직공의 방울', "Glassblower's Bauble", '화폐', 0.02),
     ],
   };
-  // 화면 잡텍스트(수량 없는 "유리직공의 방울")가 섞여도 제외돼야 함
+  // 헤더 잡텍스트('룬형태 조합')는 어떤 레코드와도 매칭 안 됨, 수량 없는 화폐('유리직공의 방울')는 시세 표시.
   const res = await store.scanRecipe([
     '룬형태 조합',
     '6x 대장장이의 숫돌',
@@ -195,12 +196,14 @@ test('scanRecipe: 노이즈 매칭 + 수량 + 비싼순 정렬', async () => {
     'lx 카오스 오브 니',
     '유리직공의 방울',
   ], fakePricer);
-  assert.equal(res.items.length, 3); // 수량 없는 잡텍스트 제외
-  assert.ok(!res.items.some((i) => i.record.en === "Glassblower's Bauble"));
-  // 합계 비싼 순: 보호의합금(0.07) > 카오스(0.06) > 숫돌(6*0.002=0.012)
+  assert.equal(res.items.length, 4); // 맨이름 화폐 포함, 헤더 잡텍스트 제외
+  assert.ok(res.items.some((i) => i.record.en === "Glassblower's Bauble"));
+  const bauble = res.items.find((i) => i.record.en === "Glassblower's Bauble");
+  assert.equal(bauble.qty, 1); // 수량 없는 맨이름은 qty 1
+  // 합계 비싼 순: 보호의합금(0.07) > 카오스(0.06) > 유리직공(0.02) > 숫돌(6*0.002=0.012)
   assert.equal(res.items[0].record.en, 'Protective Alloy');
-  assert.equal(res.items[2].record.en, "Blacksmith's Whetstone");
-  assert.equal(res.items[2].qty, 6);
+  assert.equal(res.items[3].record.en, "Blacksmith's Whetstone");
+  assert.equal(res.items[3].qty, 6);
 });
 
 test('scanRecipe: 잘린 이름은 길이 가까운 아이템으로 매칭', async () => {
@@ -294,6 +297,109 @@ test('scanRecipe: 진짜 OCR 중복(같은 수량·이름)은 한 행으로 합�
   const res = await store.scanRecipe(['3x 카오스 오브', '3x 카오스 오브'], fakePricer);
   assert.equal(res.items.length, 1);
   assert.equal(res.items[0].qty, 3);
+});
+
+// ---------- F10 화폐 거래소(맨이름) 시세 ----------
+function commodityStore() {
+  const store = new Store(os.tmpdir());
+  const rec = (kr, en, cat, vDiv, unique = false) => ({
+    kr, en, krNorm: normKr(kr), enNorm: normEn(en),
+    categoryKey: unique ? 'uniqueArmours' : cat, labelKr: cat,
+    valueDivine: vDiv, valueExalted: vDiv != null ? vDiv * 80 : null,
+  });
+  store.catalog = {
+    ref: {},
+    records: [
+      rec('신성한 오브', 'Divine Orb', '화폐', 1),
+      rec('카오스 오브', 'Chaos Orb', '화폐', 0.06),
+      rec('엑잘티드 오브', 'Exalted Orb', '화폐', 0.012),
+      rec('빛의 징조', 'Omen of Light', '징조', 0.1),
+      rec('마법사의 피', 'Mageblood', '유니크 방어구', 5, true), // 유니크는 맨이름 매칭 제외
+    ],
+  };
+  return store;
+}
+
+test('scanRecipe: 화폐 거래소 맨이름 모두 시세 표시(수량 없음, 비싼 순)', async () => {
+  const store = commodityStore();
+  // 화폐 거래소처럼 수량 없는 라벨이 줄줄이. ninja 캐시값으로 즉시 표시(pricer 주입 불필요).
+  const res = await store.scanRecipe(['신성한 오브', '카오스 오브', '엑잘티드 오브', '빛의 징조']);
+  assert.equal(res.items.length, 4);
+  assert.ok(res.items.every((i) => i.qty === 1));
+  assert.equal(res.items[0].record.en, 'Divine Orb'); // 1div(80ex) 최고가
+  assert.ok(res.items.some((i) => i.record.en === 'Omen of Light'));
+});
+
+test('scanRecipe: 맨이름은 유니크(장착 장비) 제외 — F9/GGG 경로 담당', async () => {
+  const store = commodityStore();
+  const res = await store.scanRecipe(['마법사의 피', '신성한 오브']);
+  assert.ok(!res.items.some((i) => i.record.en === 'Mageblood')); // 유니크 제외
+  assert.ok(res.items.some((i) => i.record.en === 'Divine Orb'));
+});
+
+test('scanRecipe: 맨이름 FHD 오인식(엑잘티드→엑찰티드)도 자모 퍼지 매칭', async () => {
+  const store = commodityStore();
+  const res = await store.scanRecipe(['엑찰티드 오브']);
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].record.en, 'Exalted Orb');
+});
+
+test('scanRecipe: 화면 잡텍스트 맨이름은 매칭 안 됨', async () => {
+  const store = commodityStore();
+  const res = await store.scanRecipe(['키워드를 입력하십시오', '인기', '화폐', '거래 한도 초과']);
+  assert.equal(res.items.length, 0);
+});
+
+// ---------- 단축키(accelerator) 정규화·검증 ----------
+test('normalizeAccelerator: 별칭·순서·대소문자 정규화', () => {
+  assert.equal(normalizeAccelerator('f9'), 'F9');
+  assert.equal(normalizeAccelerator('shift+f9'), 'Shift+F9');
+  assert.equal(normalizeAccelerator('ctrl + alt + p'), 'Control+Alt+P');
+  assert.equal(normalizeAccelerator('control+shift+1'), 'Control+Shift+1');
+  // 수정자 순서는 항상 Control, Alt, Shift
+  assert.equal(normalizeAccelerator('shift+ctrl+f10'), 'Control+Shift+F10');
+});
+
+test('normalizeAccelerator: 무효 입력 → null', () => {
+  assert.equal(normalizeAccelerator('F25'), null); // 범위 밖 펑션키
+  assert.equal(normalizeAccelerator('Ctrl+Alt'), null); // 키 없음(수정자만)
+  assert.equal(normalizeAccelerator('A+B'), null); // 키 둘
+  assert.equal(normalizeAccelerator(''), null);
+  assert.equal(normalizeAccelerator(null), null);
+  assert.equal(normalizeAccelerator('Win+P'), null); // 미허용 수정자
+});
+
+test('isRegisterable: 맨 글자/숫자키는 금지, 펑션키·수정자조합은 허용', () => {
+  assert.equal(isRegisterable('F9'), true);
+  assert.equal(isRegisterable('Shift+F9'), true);
+  assert.equal(isRegisterable('Control+P'), true);
+  assert.equal(isRegisterable('P'), false); // 맨 글자키는 전역 타이핑 가로챔
+  assert.equal(isRegisterable('1'), false);
+});
+
+test('mergeHotkeys: 누락/무효는 기본값으로 채움', () => {
+  assert.deepEqual(mergeHotkeys(null), { price: 'F9', scan: 'F10', pricer: 'Shift+F9' });
+  assert.deepEqual(mergeHotkeys({ price: 'ctrl+q' }), { price: 'Control+Q', scan: 'F10', pricer: 'Shift+F9' });
+  assert.deepEqual(mergeHotkeys({ scan: '쓰레기' }).scan, 'F10');
+  assert.deepEqual(DEFAULT_HOTKEYS, { price: 'F9', scan: 'F10', pricer: 'Shift+F9' });
+});
+
+test('validateHotkeyMap: 유효 맵 → 정규형', () => {
+  const v = validateHotkeyMap({ price: 'f9', scan: 'f10', pricer: 'shift+f9' });
+  assert.deepEqual(v.map, { price: 'F9', scan: 'F10', pricer: 'Shift+F9' });
+  assert.equal(v.errors, undefined);
+});
+
+test('validateHotkeyMap: 무효/맨글자/중복 검출', () => {
+  // 맨 글자키(price=P) → needsModifier, scan 무효, pricer 정상
+  const a = validateHotkeyMap({ price: 'P', scan: 'F99', pricer: 'Shift+F9' });
+  assert.equal(a.map, undefined);
+  assert.equal(a.errors.price, 'needsModifier');
+  assert.equal(a.errors.scan, 'invalid');
+  // 같은 키를 두 동작에 → 둘 다 duplicate
+  const b = validateHotkeyMap({ price: 'F9', scan: 'F9', pricer: 'Shift+F9' });
+  assert.equal(b.errors.price, 'duplicate');
+  assert.equal(b.errors.scan, 'duplicate');
 });
 
 // ---------- ggg (실시간 시세 클라이언트, 순수 함수만) ----------

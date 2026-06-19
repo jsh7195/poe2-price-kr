@@ -17,6 +17,8 @@ const errorReport = require('./errorReport');
 
 // F10 스캔에서 GGG 실시간 조회할 최대 아이템 수(레이트리밋·지연 한계). 초과분은 partial 표시.
 const MAX_SCAN_PRICE = 8;
+// F10 오버레이에 표시할 최대 아이템 수(화폐 거래소 "모두" 탭이 ~60종). 초과분은 잘라내고 partial 표시.
+const MAX_SCAN_DISPLAY = 60;
 
 /** 카탈로그 레코드 + GGG 라이브 가격 → 표시용 레코드(불변 복사).
  *  ninja 의 value/change7d 는 표시에서 배제하고 GGG 실측가로 덮어쓴다. */
@@ -525,35 +527,43 @@ class Store extends EventEmitter {
     if (!this.catalog) return { scan: true, items: [], reason: '준비 중' };
     const price = pricer || ((rec) => this._priceRecord(rec));
     const parsed = parseRecipeLines(ocrLines);
-    const matched = [];
+
+    // (A) "Nx 아이템" 형식(조합/목록 행): 수량이 의미 있고, 유니크면 GGG 실시간 조회가 필요.
+    const explicitUnique = [];
+    const explicitSeen = new Set();
     for (const { qty, name, explicit } of parsed) {
+      if (!explicit) continue;
       const rec = this._matchOcrName(name);
       if (!rec) continue;
-      matched.push({ qty, explicit, record: rec });
-    }
-    // "Nx 아이템" 형식(조합/목록 행)만 채택 → 전체 화면을 스캔해도 목록 밖 텍스트는 제외.
-    // (수량 없이 화면에 보이는 다른 아이템 이름은 explicit=false 라 걸러진다)
-    const chosen = matched.filter((m) => m.explicit);
-
-    const unique = [];
-    const seen = new Set();
-    for (const m of chosen) {
-      // 이름+수량 기준 중복제거: 같은 아이템이라도 수량이 다르면(예: 6x·4x 대장장이의 숫돌)
-      // 별개 행으로 유지한다. 진짜 OCR 중복(같은 줄이 여러 타일/배율에서 읽힘)은 수량까지
-      // 같으므로 그대로 합쳐진다.
-      const key = m.record.categoryKey + '|' + m.record.enNorm + '|' + m.qty;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push({ qty: m.qty, record: m.record });
+      // 이름+수량 기준 중복제거: 같은 아이템이라도 수량이 다르면(6x·4x) 별개 행으로 유지한다.
+      // 진짜 OCR 중복(같은 줄이 여러 타일/배율에서 읽힘)은 수량까지 같으므로 합쳐진다.
+      const key = rec.categoryKey + '|' + rec.enNorm + '|' + qty;
+      if (explicitSeen.has(key)) continue;
+      explicitSeen.add(key);
+      explicitUnique.push({ qty, record: rec });
     }
 
-    // GGG 레이트리밋·지연 한계 → 상위 MAX_SCAN_PRICE 건만 실시간 조회.
-    const capped = unique.slice(0, MAX_SCAN_PRICE);
-    const partial = unique.length > capped.length;
+    // (B) 수량 없는 맨이름(화폐 거래소 등): 강하게 매칭된 commodity(화폐/룬/우상…)만 채택.
+    // 카탈로그가 화이트리스트 역할 → 화면 잡텍스트는 매칭되지 않는다. ninja 캐시값으로 즉시 표시.
+    const explicitKeys = new Set(explicitUnique.map((m) => m.record.categoryKey + '|' + m.record.enNorm));
+    const bareSeen = new Set();
+    const bareRecords = [];
+    for (const { name, explicit } of parsed) {
+      if (explicit) continue;
+      const rec = this._matchCommodity(name);
+      if (!rec) continue;
+      const k = rec.categoryKey + '|' + rec.enNorm;
+      if (explicitKeys.has(k) || bareSeen.has(k)) continue; // 조합행에 이미 잡힌 건 제외
+      bareSeen.add(k);
+      bareRecords.push(rec);
+    }
+
+    // GGG 레이트리밋·지연 한계 → 조합행은 상위 MAX_SCAN_PRICE 건만 실시간 조회.
+    const capped = explicitUnique.slice(0, MAX_SCAN_PRICE);
+    let partial = explicitUnique.length > capped.length;
 
     // 동시 조회: ggg 내부 스로틀이 버킷별로 직렬화하므로 안전.
-    // (search/fetch 가 다른 버킷이라 아이템 간 검색-상세가 겹쳐 총 시간이 단축된다)
-    const priced = await Promise.all(
+    const explicitPriced = await Promise.all(
       capped.map(async (it) => {
         let live = null;
         try {
@@ -565,9 +575,53 @@ class Store extends EventEmitter {
       })
     );
 
-    const items = priced.filter(Boolean);
+    // 맨이름 화폐는 GGG 조회 없이 ninja 집계값(레코드에 이미 있음)으로 즉시 — 수십 개라도 빠르고 안전.
+    const barePriced = bareRecords.map((rec) => {
+      const live = { exalted: rec.valueExalted, divine: rec.valueDivine, listingCount: null };
+      return live.exalted == null && live.divine == null ? null : { qty: 1, record: withLivePrice(rec, live), live };
+    });
+
+    let items = [...explicitPriced, ...barePriced].filter(Boolean);
     items.sort((a, b) => b.qty * (b.live.exalted || 0) - a.qty * (a.live.exalted || 0));
+    // 오버레이 표시 한계(너무 많으면 화면을 넘김) → 비싼 순 상위 MAX_SCAN_DISPLAY 만.
+    if (items.length > MAX_SCAN_DISPLAY) {
+      items = items.slice(0, MAX_SCAN_DISPLAY);
+      partial = true;
+    }
     return { scan: true, items, ref: this.catalog.ref, partial };
+  }
+
+  /**
+   * 수량 없는 맨이름(화폐 거래소 라벨)에 대한 엄격한 commodity 매칭.
+   * 카탈로그 화이트리스트 + 보수적 임계값으로 화면 잡텍스트의 오매칭을 막는다.
+   *  - 정확 일치(한글/영문) 또는
+   *  - 자모 유사도 ≥0.9 이고 길이도 ±1 음절 이내(FHD 저선명 OCR 1~2자 오인식만 흡수)
+   * 유니크(장착 장비)는 제외 — 그건 F9/GGG 실시간 경로가 담당한다.
+   * @returns {object|null} commodity 레코드 또는 null.
+   */
+  _matchCommodity(name) {
+    const qKr = normKr(name);
+    const qEn = normEn(name);
+    if (qKr.length < 2 && qEn.length < 4) return null;
+    let best = null;
+    let bestScore = -Infinity;
+    for (const rec of this.catalog.records) {
+      if (this._isUnique(rec)) continue;
+      if (rec.valueExalted == null && rec.valueDivine == null) continue; // 시세 없는 건 제외
+      let s = -Infinity;
+      if (qKr && rec.krNorm && rec.krNorm === qKr) s = 1000;
+      else if (qEn && rec.enNorm && rec.enNorm.length >= 4 && rec.enNorm === qEn) s = 980;
+      else if (qKr.length >= 2 && rec.krNorm && rec.krNorm.length >= 2 && Math.abs(rec.krNorm.length - qKr.length) <= 1) {
+        const sim = jamoSimilarity(qKr, rec.krNorm);
+        if (sim >= 0.9) s = 700 + Math.round((sim - 0.9) * 1000);
+      }
+      if (s === -Infinity) continue;
+      if (s > bestScore) {
+        bestScore = s;
+        best = rec;
+      }
+    }
+    return best;
   }
 
   /**

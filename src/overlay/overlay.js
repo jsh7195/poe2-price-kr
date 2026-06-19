@@ -76,7 +76,7 @@ function showNoItem(text) {
 }
 
 function render(payload) {
-  rowsEl.classList.remove('scan');
+  rowsEl.classList.remove('scan', 'grid');
   loadingEl.classList.add('hidden');
   card.classList.remove('compact');
   if (payload && payload.loading) {
@@ -145,7 +145,12 @@ function render(payload) {
   card.classList.remove('hidden');
 }
 
-// 다중 아이템(화면 OCR 스캔) 렌더링: 비싼 순 목록, 각 줄 = 수량×단가 합계
+// 화면 스캔 아이템 수 → 열 개수. 화폐 거래소(~60종)는 한 열로 화면을 넘기므로 격자로 펼친다.
+function scanCols(n) {
+  return n <= 9 ? 1 : n <= 24 ? 2 : 3;
+}
+
+// 다중 아이템(화면 OCR 스캔) 렌더링: 비싼 순 목록(많으면 다중 열 격자), 각 줄 = 수량×단가 합계
 function renderScan(payload) {
   nameEl.textContent = '';
   const items = payload.items || [];
@@ -156,6 +161,9 @@ function renderScan(payload) {
   noitemEl.classList.add('hidden');
   rowsEl.replaceChildren();
   rowsEl.classList.add('scan');
+  const cols = scanCols(items.length);
+  rowsEl.classList.toggle('grid', cols > 1);
+  rowsEl.style.setProperty('--cols', String(cols));
   const ref = payload.ref || {};
   for (const it of items) {
     const r = it.record;
@@ -164,13 +172,17 @@ function renderScan(payload) {
 
     const left = document.createElement('div');
     left.className = 'sr-name';
-    const q = document.createElement('span');
-    q.className = 'sr-qty';
-    q.textContent = it.qty + '×';
+    // 수량 1(화폐 거래소 등 맨이름)은 "1×" 표기가 군더더기 → 생략.
+    if (it.qty > 1) {
+      const q = document.createElement('span');
+      q.className = 'sr-qty';
+      q.textContent = it.qty + '×';
+      left.appendChild(q);
+    }
     const nm = document.createElement('span');
     nm.className = 'sr-kr';
     nm.textContent = r.kr;
-    left.append(q, nm);
+    left.appendChild(nm);
 
     // 합계(수량×단가)로 적응형 표기
     const totals = {

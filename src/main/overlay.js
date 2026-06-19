@@ -70,7 +70,17 @@ class Overlay {
     if (payload && payload.scan) {
       const n = (payload.items || []).length;
       if (!n) return { w: 240, h: 84 };
-      return { w: 344, h: 16 + Math.min(n, 9) * 31 + 12 };
+      // 열 개수는 렌더러(scanCols)와 동일 규칙으로 맞춘다.
+      const cols = n <= 9 ? 1 : n <= 24 ? 2 : 3;
+      if (cols === 1) return { w: 344, h: 16 + Math.min(n, 9) * 31 + 12 };
+      const rowsPerCol = Math.ceil(n / cols);
+      const COL_W = 176; // 이름(말줄임) + 값 한 열의 너비
+      const ROW_H = 24;
+      const PAD = 12; // 카드 좌우/상하 여백
+      const GAP = 16; // 열 사이 간격(overlay.css 와 일치)
+      const w = PAD * 2 + cols * COL_W + (cols - 1) * GAP;
+      const h = PAD + rowsPerCol * ROW_H + PAD;
+      return { w, h };
     }
     // 레어 옵션검색은 "옵션 N개 기준" 한 줄이 더 붙는다 → 여유 높이.
     if (payload && payload.subnote) return { w: WIDTH, h: HEIGHT + 18 };

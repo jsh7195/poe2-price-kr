@@ -6,10 +6,8 @@ const path = require('path');
 const { sendCtrlC } = require('./services/sendcopy');
 const { scanScreen } = require('./services/ocr');
 const { looksLikeItem } = require('./services/itemtext');
+const { ACTIONS, DEFAULT_HOTKEYS, mergeHotkeys, validateHotkeyMap } = require('./services/accelerator');
 
-const HOTKEY = 'F9'; // 단일 아이템(호버) 시세
-const SCAN_HOTKEY = 'F10'; // 화면 OCR 다중 시세 스캔
-const PRICER_HOTKEY = 'Shift+F9'; // 인터랙티브 옵션(모드) 선택 시세
 const POLL_BUDGET_MS = 900;
 const POLL_INTERVAL_MS = 40;
 
@@ -171,50 +169,116 @@ async function runPricer(store, overlay, pricer) {
   pricer.show(point, item);
 }
 
-function setupHotkey(store, overlay, pricer) {
-  if (process.platform !== 'win32') return false;
-
+/**
+ * 동작별 핸들러를 만든다. 각 핸들러는 자체 재진입 가드(running 플래그)를 가져
+ * 누름이 겹쳐도 중복 실행되지 않는다. 재등록해도 같은 핸들러를 재사용한다.
+ */
+function makeHandlers(store, overlay, pricer) {
   let running9 = false;
-  const ok = globalShortcut.register(HOTKEY, () => {
-    if (running9) return;
-    running9 = true;
-    runPriceCheck(store, overlay)
-      .catch((e) => console.error('[hotkey] 가격체크 실패:', e))
-      .finally(() => {
-        running9 = false;
-      });
-  });
-  dbg(`[hotkey] ${HOTKEY} 등록 ${ok ? '성공' : '실패(다른 프로그램이 F9 점유 중일 수 있음)'}`);
-
   let running10 = false;
-  const okScan = globalShortcut.register(SCAN_HOTKEY, () => {
-    if (running10) return;
-    running10 = true;
-    runScan(store, overlay)
-      .catch((e) => console.error('[hotkey] 스캔 실패:', e))
-      .finally(() => {
-        running10 = false;
-      });
-  });
-  dbg(`[hotkey] ${SCAN_HOTKEY} 등록 ${okScan ? '성공' : '실패'}`);
-
   let runningP = false;
-  const okPricer = globalShortcut.register(PRICER_HOTKEY, () => {
-    if (runningP) return;
-    runningP = true;
-    runPricer(store, overlay, pricer)
-      .catch((e) => console.error('[hotkey] 옵션 시세 실패:', e))
-      .finally(() => {
-        runningP = false;
-      });
-  });
-  dbg(`[hotkey] ${PRICER_HOTKEY} 등록 ${okPricer ? '성공' : '실패'}`);
-
-  return ok;
+  return {
+    price: () => {
+      if (running9) return;
+      running9 = true;
+      runPriceCheck(store, overlay)
+        .catch((e) => console.error('[hotkey] 가격체크 실패:', e))
+        .finally(() => { running9 = false; });
+    },
+    scan: () => {
+      if (running10) return;
+      running10 = true;
+      runScan(store, overlay)
+        .catch((e) => console.error('[hotkey] 스캔 실패:', e))
+        .finally(() => { running10 = false; });
+    },
+    pricer: () => {
+      if (runningP) return;
+      runningP = true;
+      runPricer(store, overlay, pricer)
+        .catch((e) => console.error('[hotkey] 옵션 시세 실패:', e))
+        .finally(() => { runningP = false; });
+    },
+  };
 }
 
-function teardownHotkey() {
-  globalShortcut.unregisterAll();
+/**
+ * 주어진 accelerator 맵으로 세 동작을 (재)등록한다.
+ * 이전 맵(previous)이 있으면 그 세 키만 골라 해제한다 — 앱의 다른 globalShortcut 은 건드리지 않는다.
+ * @returns {{price:boolean, scan:boolean, pricer:boolean}} 동작별 등록 성공 여부.
+ */
+function registerAll(map, handlers, previous) {
+  if (previous) {
+    for (const action of ACTIONS) {
+      try {
+        globalShortcut.unregister(previous[action]); // 미등록 키 해제는 무해(no-op)
+      } catch (e) {
+        /* noop */
+      }
+    }
+  }
+  const results = {};
+  for (const action of ACTIONS) {
+    const accel = map[action];
+    let ok = false;
+    try {
+      ok = globalShortcut.register(accel, handlers[action]);
+    } catch (e) {
+      ok = false;
+    }
+    results[action] = ok;
+    dbg(`[hotkey] ${action}=${accel} 등록 ${ok ? '성공' : '실패(다른 프로그램이 점유 중일 수 있음)'}`);
+  }
+  return results;
 }
 
-module.exports = { setupHotkey, teardownHotkey, HOTKEY };
+/**
+ * 전역 단축키 컨트롤러. 설정에서 읽어 등록하고, 설정 화면 변경 시 재등록한다.
+ * @returns {{ init:Function, apply:Function, getCurrent:Function, teardown:Function }}
+ */
+function createHotkeyController(store, overlay, pricer) {
+  const handlers = makeHandlers(store, overlay, pricer);
+  let current = { ...DEFAULT_HOTKEYS };
+  let applying = false; // 동시 적용(중복 저장/이중 클릭) 직렬화 — 재등록이 서로 덮어쓰지 않게.
+
+  return {
+    /** 저장된 설정(또는 기본값)으로 최초 등록. @returns {Promise<object>} 동작별 결과. */
+    async init() {
+      const settings = await store.getSettings();
+      const next = mergeHotkeys(settings.hotkeys);
+      const results = registerAll(next, handlers, current);
+      current = next;
+      return results;
+    },
+
+    /** 현재 적용 중인 정규형 단축키 맵(불변 복사). */
+    getCurrent() {
+      return { ...current };
+    },
+
+    /**
+     * 렌더러가 보낸 맵을 검증 → 재등록 → 영속 저장. 동시 호출은 거절(busy)해 레이스를 막는다.
+     * @returns {Promise<{ok:boolean, hotkeys:object, results?:object, errors?:object}>}
+     */
+    async apply(rawMap) {
+      if (applying) return { ok: false, hotkeys: { ...current }, error: 'busy' };
+      applying = true;
+      try {
+        const v = validateHotkeyMap(rawMap);
+        if (v.errors) return { ok: false, errors: v.errors, hotkeys: { ...current } };
+        const results = registerAll(v.map, handlers, current);
+        current = v.map;
+        await store.setSetting('hotkeys', v.map);
+        return { ok: ACTIONS.every((a) => results[a]), hotkeys: { ...current }, results };
+      } finally {
+        applying = false;
+      }
+    },
+
+    teardown() {
+      globalShortcut.unregisterAll();
+    },
+  };
+}
+
+module.exports = { createHotkeyController };
