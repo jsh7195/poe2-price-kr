@@ -326,6 +326,7 @@ class Store extends EventEmitter {
       rarity: parsed.rarity,
       itemLevel: parsed.itemLevel,
       corrupted: parsed.corrupted,
+      sockets: parsed.sockets, // 룬 소켓(홈) 개수 — 검색 필터용
       mods,
       currencyIcons: (this.dict && this.dict.currencyIcons) || null,
     };
@@ -421,14 +422,14 @@ class Store extends EventEmitter {
     const hasFilters = data && Array.isArray(data.filters) && data.filters.length;
     if (!data || (!hasFilters && !data.categoryId)) return this.getFavorites();
     const fsig = (data.filters || []).map((f) => f.id + ':' + (f.min != null ? f.min : '')).sort().join(',');
-    const sig = fsig + '|il' + (data.ilvl || '') + '|r' + (data.rarity || '');
+    const sig = fsig + '|il' + (data.ilvl || '') + '|sk' + (data.sockets ?? '') + '|r' + (data.rarity || '');
     const key = 'rare:' + (data.base || data.name || '') + '|' + sig;
     const list = await this.getFavorites();
     if (list.some((f) => f.key === key)) return list;
     const fav = {
       key, kind: 'rare',
       kr: data.base || data.name || '레어', en: data.name || '', base: data.base || '',
-      categoryId: data.categoryId || null, ilvl: data.ilvl || null, rarity: data.rarity || null,
+      categoryId: data.categoryId || null, ilvl: data.ilvl || null, sockets: data.sockets || null, rarity: data.rarity || null,
       filters: data.filters || [], mods: Array.isArray(data.mods) ? data.mods : [],
       lastPrice: data.price || null, savedAt: Date.now(),
     };
@@ -484,7 +485,7 @@ class Store extends EventEmitter {
       } else {
         const filters = (fav.filters || []).map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
         price = await ggg.priceByStatFilters(this.selectedLeague, filters, {
-          category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined, rarity: fav.rarity || undefined,
+          category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined, sockets: fav.sockets || undefined, rarity: fav.rarity || undefined,
         });
       }
     } catch (e) {

@@ -610,6 +610,7 @@ test('parseItem: 레어 장화 — 랜덤이름 vs 기반, 품질/홈/속성 제
   assert.equal(it.base, '속박된 샌들'); // 진짜 장화 기반
   assert.equal(it.quality, 20);
   assert.equal(it.itemLevel, 81);
+  assert.equal(it.sockets, 1); // "홈: S" → 룬 소켓 1개
   // 모드 = 룬1 + explicit6 = 7 (퀄리티/ES속성/"홈: S"/요구사항 은 제외)
   assert.equal(it.mods.length, 7);
   assert.ok(!it.mods.some((m) => /퀄리티|^에너지 보호막:|^홈/.test(m.raw)));
@@ -622,6 +623,26 @@ test('parseItem: 룬 모드 — 끝의 "(rune)" 표기 제거 + 접사 rune', ()
   assert.equal(rune.clean, '방어도, 회피, 에너지 보호막 18% 증가'); // (rune) 제거됨
   assert.deepEqual(rune.values, [18]);
   assert.equal(rune.statType, 'rune');
+});
+
+test('ggg.buildStatQuery: 룬 소켓(홈)·아이템레벨·카테고리 필터', () => {
+  const q = ggg.buildStatQuery([{ id: 'explicit.stat_x', value: { min: 10 } }], { category: 'armour.boots', ilvl: 80, sockets: 2 });
+  assert.equal(q.filters.equipment_filters.filters.rune_sockets.min, 2);
+  assert.equal(q.filters.misc_filters.filters.ilvl.min, 80);
+  assert.equal(q.filters.type_filters.filters.category.option, 'armour.boots');
+  // 소켓 0/무효는 필터에서 제외, 상한(10)으로 캡
+  assert.equal(ggg.buildStatQuery([], { sockets: 0 }).filters, undefined);
+  assert.equal(ggg.buildStatQuery([], { category: 'x', sockets: 99 }).filters.equipment_filters.filters.rune_sockets.min, 10);
+  assert.equal(ggg.buildStatQuery([], { category: 'x', sockets: 'abc' }).filters.equipment_filters, undefined);
+});
+
+test('ggg.affixRank: 접두 위·접미 아래 (고정 최상·룬 최하)', () => {
+  // implicit/enchant(0) < prefix(1) < explicit(2) < suffix(3) < rune(4)
+  assert.ok(ggg.affixRank('prefix') < ggg.affixRank('suffix'));
+  assert.ok(ggg.affixRank('implicit') < ggg.affixRank('prefix'));
+  assert.ok(ggg.affixRank('explicit') < ggg.affixRank('suffix'));
+  assert.ok(ggg.affixRank('suffix') < ggg.affixRank('rune'));
+  assert.equal(ggg.affixRank('enchant'), ggg.affixRank('implicit'));
 });
 
 test('ggg.gggCategoryId: 한글 아이템종류 → GGG 카테고리', () => {

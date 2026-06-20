@@ -15,10 +15,17 @@ let lastFilters = [];
 let currencyIcons = {}; // 통화 id → 아이콘 URL
 let ilvlCb = null; // 아이템 레벨 필터 체크박스
 let ilvlEl = null; // 아이템 레벨 최소 입력
+let socketCb = null; // 룬 소켓(홈) 개수 필터 체크박스
+let socketEl = null; // 룬 소켓 최소 개수 입력
 
 const RARITY_OPT = { normal: 'normal', magic: 'magic', rare: 'rare' };
 
-const AFFIX_LABEL = { implicit: '고정', prefix: '접두', suffix: '접미', explicit: '비고정', rune: '룬', crafted: '제작', enchant: '인챈트' };
+// 모드의 "거래 타입"(카테고리). prefix/suffix/explicit 는 모두 비고정. 웹 거래소와 동일한 구분.
+const TYPE_LABEL = { implicit: '고정', rune: '룬', enchant: '인챈트', crafted: '제작' };
+function modType(affix) { return TYPE_LABEL[affix] || '비고정'; }
+function modTypeClass(affix) { return TYPE_LABEL[affix] ? affix : 'explicit'; }
+// 비고정(explicit)의 접두/접미 위치 — 타입과 별개의 보조 표기(접두 위·접미 아래 정렬과 연동).
+const POS_LABEL = { prefix: '접두', suffix: '접미' };
 
 function fmt(n) {
   if (n == null || !isFinite(n)) return '–';
@@ -79,6 +86,35 @@ function renderItem(item) {
   ilvlRow.append(ilvlCb, ilvlBody, ilvlEl);
   modsEl.appendChild(ilvlRow);
 
+  // 룬 소켓(홈) 개수 — 장비 검색의 핵심 필수조건. 아이템이 실제로 소켓을 가질 때만 표시
+  // (소켓 없는 아이템에 빈 입력칸을 띄워 실수로 잘못된 필터가 저장되는 것 방지).
+  socketCb = null;
+  socketEl = null;
+  if (item.sockets != null) {
+    socketCb = document.createElement('input');
+    socketCb.type = 'checkbox';
+    socketCb.checked = !!item.sockets && item.sockets > 0; // 소켓이 있으면 기본 포함
+    socketEl = document.createElement('input');
+    socketEl.className = 'mod-min';
+    socketEl.type = 'number';
+    socketEl.min = '0';
+    socketEl.value = item.sockets != null ? item.sockets : '';
+    socketEl.title = '룬 소켓(홈) 최소 개수';
+    const sRow = document.createElement('div');
+    sRow.className = 'mod ilvl-row';
+    const sBody = document.createElement('div');
+    sBody.className = 'mod-body';
+    const sTxt = document.createElement('div');
+    sTxt.className = 'mod-text';
+    const sTag = document.createElement('span');
+    sTag.className = 'mod-tag';
+    sTag.textContent = '홈';
+    sTxt.append(sTag, document.createTextNode('룬 소켓(홈) 개수 이상'));
+    sBody.appendChild(sTxt);
+    sRow.append(socketCb, sBody, socketEl);
+    modsEl.appendChild(sRow);
+  }
+
   if (matchedCount === 0) {
     const note = document.createElement('div');
     note.className = 'base-note';
@@ -99,10 +135,20 @@ function renderItem(item) {
     body.className = 'mod-body';
     const txt = document.createElement('div');
     txt.className = 'mod-text';
+    // 타입 태그(비고정/고정/룬/인챈트/제작) — 웹 거래소의 stat 타입 구분.
     const tag = document.createElement('span');
-    tag.className = 'mod-tag ' + m.affix;
-    tag.textContent = AFFIX_LABEL[m.affix] || m.affix;
-    txt.append(tag, document.createTextNode(m.text));
+    tag.className = 'mod-tag type-' + modTypeClass(m.affix);
+    tag.textContent = modType(m.affix);
+    txt.appendChild(tag);
+    // 비고정의 접두/접미는 별도 보조 배지(타입과 다른 레벨).
+    const pos = POS_LABEL[m.affix];
+    if (pos) {
+      const pb = document.createElement('span');
+      pb.className = 'mod-pos ' + m.affix;
+      pb.textContent = pos;
+      txt.appendChild(pb);
+    }
+    txt.appendChild(document.createTextNode(m.text));
     body.appendChild(txt);
     if (!m.matched) {
       const nm = document.createElement('div');
@@ -138,9 +184,11 @@ function chosenMods() {
 
 function searchOpts(filterCount) {
   const ilvlOn = ilvlCb && ilvlCb.checked && ilvlEl && ilvlEl.value !== '';
+  const socketOn = socketCb && socketCb.checked && socketEl && socketEl.value !== '';
   return {
     category: currentItem ? currentItem.categoryId : undefined,
     ilvl: ilvlOn ? Number(ilvlEl.value) : undefined,
+    sockets: socketOn ? Number(socketEl.value) : undefined,
     // 옵션 없이 베이스 검색 시엔 같은 등급(일반/매직)으로 좁힌다.
     rarity: filterCount === 0 && currentItem ? RARITY_OPT[currentItem.rarity] : undefined,
   };
@@ -290,6 +338,7 @@ function favBtn(res) {
         base: currentItem ? currentItem.base : '',
         categoryId: opts.category || null,
         ilvl: opts.ilvl || null,
+        sockets: opts.sockets || null,
         rarity: opts.rarity || null,
         filters: lastFilters,
         mods,

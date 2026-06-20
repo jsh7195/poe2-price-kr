@@ -338,8 +338,37 @@ function buildStatQuery(statFilters, opts = {}) {
   const filters = {};
   if (Object.keys(typeFilters).length) filters.type_filters = { filters: typeFilters };
   if (opts.ilvl) filters.misc_filters = { filters: { ilvl: { min: Number(opts.ilvl) } } };
+  // 룬 소켓(홈) 개수 — 장비 검색의 핵심 필수조건. trade2 equipment_filters.rune_sockets.
+  if (opts.sockets) {
+    const sk = Number(opts.sockets);
+    if (Number.isFinite(sk) && sk > 0) {
+      filters.equipment_filters = { filters: { rune_sockets: { min: Math.min(Math.floor(sk), 10) } } };
+    }
+  }
   if (Object.keys(filters).length) query.filters = filters;
   return query;
+}
+
+/**
+ * 옵션 시세 창의 모드 정렬 순위. 접두(prefix)는 위로, 접미(suffix)는 아래로.
+ * 고정(implicit)·인챈트는 맨 위, 룬은 맨 아래(아이템 표기 순서와 동일).
+ */
+function affixRank(affix) {
+  switch (affix) {
+    case 'implicit':
+    case 'enchant':
+      return 0;
+    case 'prefix':
+      return 1;
+    case 'crafted':
+      return 3; // 제작 = 접미 슬롯
+    case 'suffix':
+      return 3;
+    case 'rune':
+      return 4;
+    default:
+      return 2; // explicit (접두/접미 불명)
+  }
 }
 
 // 검색 min = 아이템의 실제 굴림값(기준값). 멀티값(# ~ # 피해추가)은 평균.
@@ -518,8 +547,13 @@ function matchItemMods(item, statIndex) {
       checked: !!r && m.statType !== 'implicit' && m.statType !== 'pseudo' && m.statType !== 'enchant',
     };
   });
-  // 검색 가능한(매칭) 모드를 위로, 불가(회색)는 아래로 정렬 → 상단 정돈.
-  out.sort((a, b) => Number(b.matched) - Number(a.matched) || b.weight - a.weight);
+  // 검색 가능한(매칭) 모드를 위로, 불가(회색)는 아래로. 그 안에서 접두→접미 순(고정 맨 위, 룬 맨 아래).
+  out.sort(
+    (a, b) =>
+      Number(b.matched) - Number(a.matched) ||
+      affixRank(a.affix) - affixRank(b.affix) ||
+      b.weight - a.weight
+  );
   return out;
 }
 
@@ -571,4 +605,5 @@ module.exports = {
   tradeUrl,
   parseTradeUrl,
   fetchSavedSearch,
+  affixRank,
 };

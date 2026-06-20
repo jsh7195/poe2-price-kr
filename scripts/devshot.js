@@ -28,7 +28,7 @@ function waitReady(store, timeoutMs = 45000) {
   });
 }
 
-async function runScreenshots(app, win, store, overlay, outDir) {
+async function runScreenshots(app, win, store, overlay, pricer, outDir) {
   try {
     await fs.mkdir(outDir, { recursive: true });
     const saveOf = (target) => async (name) => {
@@ -122,6 +122,24 @@ async function runScreenshots(app, win, store, overlay, outDir) {
       overlay.show({ x: 360, y: 220 }, currencyScan);
       await delay(800);
       await saveOverlay('shot_overlay_currency_board.png');
+    }
+
+    // 옵션 시세 창(Shift+F9): 실제 아이템(레어 장화 픽스처)으로 모드 타입/접두접미·홈 행·스크롤바 확인
+    if (pricer) {
+      try {
+        const bootsText = await fs.readFile(path.join(__dirname, '..', 'test', 'fixtures', 'item-rare-boots.txt'), 'utf8');
+        const item = await store.inspectItem(bootsText);
+        if (item) {
+          pricer.show({ x: 700, y: 160 }, item);
+          await delay(1300);
+          const savePricer = saveOf(pricer.win);
+          await savePricer('shot_pricer.png');
+        } else {
+          console.log('[shot] pricer: inspectItem 실패(아이템 파싱 불가)');
+        }
+      } catch (e) {
+        console.log('[shot] pricer 캡처 실패:', e.message);
+      }
     }
 
     console.log('[shot] done');

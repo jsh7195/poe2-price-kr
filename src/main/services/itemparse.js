@@ -30,6 +30,8 @@ const DIVIDER = /^[-—–]{2,}$/;
 const RE_CLASS = /^(아이템 종류|item class)\s*[:：]\s*(.+)$/i;
 const RE_RARITY = /^(아이템 희귀도|희귀도|rarity)\s*[:：]\s*(.+)$/i;
 const RE_ILVL = /^(아이템 레벨|item level)\s*[:：]\s*(\d+)/i;
+// 룬 소켓(홈) 줄: "홈: S" / "홈: S S" / "소켓: ..." → 마커 개수 = 소켓 수.
+const RE_SOCKETS = /^(홈|소켓|sockets)\s*[:：]\s*(.+)$/i;
 // PoE2 KR 은 "품질" 이 아니라 "퀄리티" 로 표기 → 둘 다 인식(이 줄은 모드가 아님).
 const RE_QUALITY = /^(퀄리티|품질|quality)\s*[:：]\s*\+?(\d+)/i;
 const RE_REQ = /^(요구 사항|requirements|요구사항)\s*[:：]/i;
@@ -122,6 +124,7 @@ function parseItem(clipText) {
   let itemLevel = null;
   let quality = 0;
   let corrupted = false;
+  let sockets = null;
   let rarityIdx = -1;
 
   for (let i = 0; i < lines.length; i++) {
@@ -137,6 +140,10 @@ function parseItem(clipText) {
       itemLevel = Number(m[2]);
     } else if ((m = l.match(RE_QUALITY))) {
       quality = Number(m[2]);
+    } else if ((m = l.match(RE_SOCKETS))) {
+      // 마커(공백 구분 토큰) 개수 = 소켓 수. 괄호 주석"(...)"은 제외해 오카운트 방지.
+      const toks = m[2].replace(/\([^)]*\)/g, ' ').trim().split(/\s+/).filter(Boolean);
+      sockets = toks.length || null;
     } else if (RE_CORRUPT.test(l)) {
       corrupted = true;
     }
@@ -195,7 +202,7 @@ function parseItem(clipText) {
     pending = null;
   }
 
-  return { category, rarity, name, base, itemLevel, quality, corrupted, mods };
+  return { category, rarity, name, base, itemLevel, quality, corrupted, sockets, mods };
 }
 
 module.exports = { parseItem, cleanModLine, affixFromAnnotation, affixToStatType };

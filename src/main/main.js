@@ -237,7 +237,7 @@ function start() {
       if (process.env.POE_SHOT) {
         try {
           const { runScreenshots } = require('../../scripts/devshot');
-          runScreenshots(app, mainWindow, store, overlay, path.join(__dirname, '..', '..', '.research'));
+          runScreenshots(app, mainWindow, store, overlay, pricer, path.join(__dirname, '..', '..', '.research'));
         } catch (e) {
           console.error('[devshot] 사용 불가(패키지 빌드에는 미포함):', e.message);
         }
