@@ -329,12 +329,14 @@ function gggCategoryId(krClass) {
  *  옵션(stats) 없이 카테고리만으로도 검색 가능(베이스 아이템). */
 function buildStatQuery(statFilters, opts = {}) {
   const query = { status: { option: 'any' } };
+  // 유니크: 이름으로 그 아이템만 검색(이름이 기반·등급을 함의 → 카테고리/등급 필터는 생략).
+  if (opts.name) query.name = opts.name;
   if (Array.isArray(statFilters) && statFilters.length) {
     query.stats = [{ type: 'and', filters: statFilters }];
   }
   const typeFilters = {};
-  if (opts.category) typeFilters.category = { option: opts.category };
-  if (opts.rarity) typeFilters.rarity = { option: opts.rarity };
+  if (opts.category && !opts.name) typeFilters.category = { option: opts.category };
+  if (opts.rarity && !opts.name) typeFilters.rarity = { option: opts.rarity };
   const filters = {};
   if (Object.keys(typeFilters).length) filters.type_filters = { filters: typeFilters };
   if (opts.ilvl) filters.misc_filters = { filters: { ilvl: { min: Number(opts.ilvl) } } };
@@ -498,8 +500,8 @@ async function _priceFromSearch(league, sres) {
  */
 async function priceByStatFilters(league, statFilters, opts = {}) {
   const hasStats = Array.isArray(statFilters) && statFilters.length > 0;
-  // 옵션(stats) 또는 카테고리 둘 중 하나는 있어야 검색(베이스 아이템은 카테고리+ilvl 만).
-  if (!league || (!hasStats && !opts.category)) return null;
+  // 옵션(stats)·카테고리·이름(유니크) 중 하나는 있어야 검색.
+  if (!league || (!hasStats && !opts.category && !opts.name)) return null;
   // 선택한 옵션 "그대로" 단일 검색. 자동 완화 없음 — 매물 없으면 없는 대로 정직하게 보여준다
   // (중요 옵션을 빼고 싼 값을 보여주면 아이템 가치 평가가 왜곡되므로).
   const body = { query: buildStatQuery(hasStats ? statFilters : [], opts), sort: { price: 'asc' } };

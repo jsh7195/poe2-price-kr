@@ -129,13 +129,27 @@ async function runScreenshots(app, win, store, overlay, pricer, outDir) {
       try {
         const bootsText = await fs.readFile(path.join(__dirname, '..', 'test', 'fixtures', 'item-rare-boots.txt'), 'utf8');
         const item = await store.inspectItem(bootsText);
+        const savePricer = saveOf(pricer.win);
         if (item) {
           pricer.show({ x: 700, y: 160 }, item);
           await delay(1300);
-          const savePricer = saveOf(pricer.win);
           await savePricer('shot_pricer.png');
         } else {
           console.log('[shot] pricer: inspectItem 실패(아이템 파싱 불가)');
+        }
+        // 유니크: 이름 검색이 들어가는지(유니크명 검색 ✓) 확인
+        const uniqText = [
+          '아이템 종류: 허리띠', '아이템 희귀도: 고유', '마법사의 피', '무거운 허리띠', '--------',
+          '아이템 레벨: 82', '--------',
+          '{ 고정 속성 부여 }', '장비한 마법 플라스크의 효과를 적용',
+          '{ 접두어 속성 부여 "x" }', '플라스크 충전량 20(15-25)% 증가',
+        ].join('\n');
+        const uniq = await store.inspectItem(uniqText);
+        console.log('[shot] 유니크 영문명 해석:', uniq && uniq.uniqueName);
+        if (uniq) {
+          pricer.show({ x: 700, y: 160 }, uniq);
+          await delay(1500);
+          await savePricer('shot_pricer_unique.png');
         }
       } catch (e) {
         console.log('[shot] pricer 캡처 실패:', e.message);

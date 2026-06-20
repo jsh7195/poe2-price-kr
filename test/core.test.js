@@ -636,6 +636,17 @@ test('ggg.buildStatQuery: 룬 소켓(홈)·아이템레벨·카테고리 필터'
   assert.equal(ggg.buildStatQuery([], { category: 'x', sockets: 'abc' }).filters.equipment_filters, undefined);
 });
 
+test('ggg.buildStatQuery: 유니크는 이름으로 검색(카테고리/등급 필터 생략)', () => {
+  const q = ggg.buildStatQuery([{ id: 'explicit.stat_x', value: { min: 5 } }], { name: 'Mageblood', category: 'accessory.belt', rarity: 'unique' });
+  assert.equal(q.name, 'Mageblood'); // 이름으로 그 유니크만
+  assert.equal(q.filters, undefined); // 이름이 있으면 카테고리/등급 type_filters 생략
+  assert.equal(q.stats[0].filters[0].id, 'explicit.stat_x'); // 옵션 필터는 유지(변동 굴림)
+  // 이름 없으면 종전대로 카테고리 필터
+  const q2 = ggg.buildStatQuery([], { category: 'accessory.belt' });
+  assert.equal(q2.name, undefined);
+  assert.equal(q2.filters.type_filters.filters.category.option, 'accessory.belt');
+});
+
 test('ggg.affixRank: 접두 위·접미 아래 (고정 최상·룬 최하)', () => {
   // implicit/enchant(0) < prefix(1) < explicit(2) < suffix(3) < rune(4)
   assert.ok(ggg.affixRank('prefix') < ggg.affixRank('suffix'));

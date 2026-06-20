@@ -50,11 +50,13 @@ function renderItem(item) {
     searchBtn.disabled = true;
     return;
   }
-  // 제목 = 타입(아이템 종류). 레어의 랜덤 이름은 검색에 무의미하므로 표시에서 뺀다.
-  itemNameEl.textContent = item.category || item.base || '아이템';
+  // 제목: 유니크는 고유 이름, 그 외는 타입(아이템 종류). 레어의 랜덤 이름은 검색에 무의미.
+  const isUnique = item.rarity === 'unique';
+  itemNameEl.textContent = (isUnique && item.name) || item.category || item.base || '아이템';
   const bits = [];
   if (item.rarity) bits.push({ rare: '레어', magic: '매직', unique: '유니크', normal: '일반' }[item.rarity] || item.rarity);
-  if (item.categoryId) bits.push('타입 검색 ✓');
+  if (isUnique) bits.push(item.uniqueName ? '유니크명 검색 ✓' : '유니크명 미인식');
+  else if (item.categoryId) bits.push('타입 검색 ✓');
   else if (item.category) bits.push('타입 필터 없음');
   if (item.itemLevel) bits.push('아이템 레벨 ' + item.itemLevel);
   if (item.corrupted) bits.push('타락');
@@ -185,7 +187,10 @@ function chosenMods() {
 function searchOpts(filterCount) {
   const ilvlOn = ilvlCb && ilvlCb.checked && ilvlEl && ilvlEl.value !== '';
   const socketOn = socketCb && socketCb.checked && socketEl && socketEl.value !== '';
+  // 유니크는 이름으로 검색(그 아이템만). 카탈로그에서 영문명을 못 찾으면 옵션으로만.
+  const uniqueName = currentItem && currentItem.rarity === 'unique' ? currentItem.uniqueName : null;
   return {
+    name: uniqueName || undefined,
     category: currentItem ? currentItem.categoryId : undefined,
     ilvl: ilvlOn ? Number(ilvlEl.value) : undefined,
     sockets: socketOn ? Number(socketEl.value) : undefined,
@@ -339,6 +344,7 @@ function favBtn(res) {
         categoryId: opts.category || null,
         ilvl: opts.ilvl || null,
         sockets: opts.sockets || null,
+        uniqueName: opts.name || null,
         rarity: opts.rarity || null,
         filters: lastFilters,
         mods,

@@ -318,12 +318,24 @@ class Store extends EventEmitter {
     } catch (e) {
       /* 스탯 사전 실패 → 메타만 */
     }
+    // 유니크는 옵션만으론 다른 아이템과 섞인다 → 카탈로그로 한글명→영문명 해석해 이름까지 검색.
+    let uniqueName = null;
+    if (parsed.rarity === 'unique' && this.catalog && parsed.name) {
+      try {
+        const results = search(this.catalog.records, parsed.name, 5);
+        const uni = results.find((r) => this._isUnique(r));
+        if (uni) uniqueName = uni.en;
+      } catch (e) {
+        /* 카탈로그 매칭 실패 → 이름 없이 옵션으로만 검색 */
+      }
+    }
     return {
       name: parsed.name,
       base: parsed.base,
       category: parsed.category,
       categoryId: ggg.gggCategoryId(parsed.category), // GGG 타입 필터용(없으면 null)
       rarity: parsed.rarity,
+      uniqueName, // 유니크 영문명(카탈로그 해석) — 있으면 이름으로 검색
       itemLevel: parsed.itemLevel,
       corrupted: parsed.corrupted,
       sockets: parsed.sockets, // 룬 소켓(홈) 개수 — 검색 필터용
@@ -347,7 +359,7 @@ class Store extends EventEmitter {
         if (p.max != null && p.max !== '') value.max = Number(p.max);
         return { id: p.id, value: Object.keys(value).length ? value : undefined };
       });
-    if (!filters.length && !opts.category) return null;
+    if (!filters.length && !opts.category && !opts.name) return null;
     try {
       return await ggg.priceByStatFilters(this.selectedLeague, filters, opts || {});
     } catch (e) {
@@ -429,7 +441,8 @@ class Store extends EventEmitter {
     const fav = {
       key, kind: 'rare',
       kr: data.base || data.name || '레어', en: data.name || '', base: data.base || '',
-      categoryId: data.categoryId || null, ilvl: data.ilvl || null, sockets: data.sockets || null, rarity: data.rarity || null,
+      categoryId: data.categoryId || null, ilvl: data.ilvl || null, sockets: data.sockets || null,
+      uniqueName: data.uniqueName || null, rarity: data.rarity || null,
       filters: data.filters || [], mods: Array.isArray(data.mods) ? data.mods : [],
       lastPrice: data.price || null, savedAt: Date.now(),
     };
@@ -485,7 +498,8 @@ class Store extends EventEmitter {
       } else {
         const filters = (fav.filters || []).map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
         price = await ggg.priceByStatFilters(this.selectedLeague, filters, {
-          category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined, sockets: fav.sockets || undefined, rarity: fav.rarity || undefined,
+          category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined, sockets: fav.sockets || undefined,
+          name: fav.uniqueName || undefined, rarity: fav.rarity || undefined,
         });
       }
     } catch (e) {
