@@ -38,6 +38,13 @@ async function runScreenshots(app, win, store, overlay, outDir) {
     };
     const save = saveOf(win);
 
+    win.webContents.on('console-message', (_e, level, message) => {
+      if (level >= 2) console.log('[renderer]', message);
+    });
+    await win.webContents.executeJavaScript(
+      `window.__errs=[];addEventListener('error',e=>window.__errs.push(e.message+' @ '+(e.filename||'')+':'+e.lineno));addEventListener('unhandledrejection',e=>window.__errs.push('rej: '+((e.reason&&e.reason.stack)||e.reason)));true`
+    );
+
     await waitReady(store);
     await delay(900);
     await save('shot_empty.png');
@@ -53,9 +60,26 @@ async function runScreenshots(app, win, store, overlay, outDir) {
       await save(`shot_search_${i}.png`);
     }
 
+    // 거래 URL 즐겨찾기 — 메인 창에 표시(스토어 오염 없이 IPC 로 가짜 목록 주입)
+    await win.webContents.executeJavaScript(
+      `(() => { const s = document.getElementById('search'); s.value=''; s.dispatchEvent(new Event('input',{bubbles:true})); })()`
+    );
+    win.webContents.send('app:favorites', [
+      {
+        key: 'url:poe.kakaogames.com|8rVmKDRnFV', kind: 'url', kr: 'Runes of Aldur', labelKr: '거래 URL',
+        id: '8rVmKDRnFV', base: '8rVmKDRnFV',
+        url: 'https://poe.kakaogames.com/trade2/search/poe2/Runes%20of%20Aldur/8rVmKDRnFV',
+        lastPrice: { divine: 2700, exalted: null, altAmount: null, altCurrency: null, listingCount: 1 },
+      },
+    ]);
+    await delay(500);
+    await save('shot_url_favorite.png');
+    const errs = await win.webContents.executeJavaScript('JSON.stringify(window.__errs||[])');
+    console.log('[renderer-errors]', errs);
+
     // 단축키 설정 모달
     await win.webContents.executeJavaScript(
-      `(() => { const s = document.getElementById('search'); s.value=''; s.dispatchEvent(new Event('input',{bubbles:true})); document.getElementById('open-settings').click(); })()`
+      `document.getElementById('open-settings').click()`
     );
     await delay(700);
     await save('shot_settings.png');

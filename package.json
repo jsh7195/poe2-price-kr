@@ -1,7 +1,7 @@
 {
   "name": "poe2-price-kr",
   "productName": "PoE2 시세검색",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "description": "Path of Exile 2 가격을 한글 이름으로 검색하는 데스크톱 앱 (GGG 거래소 실시간 시세 + 옵션 검색, poe.ninja 화폐 시세 + 공식 GGG 한글 데이터)",
   "main": "src/main/main.js",
   "author": "jsh71",

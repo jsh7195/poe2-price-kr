@@ -52,9 +52,25 @@
       </div>
       <p id="hint" class="hint">
         한글 이름을 입력하면 <strong>poe.ninja</strong> 시세(divine · exalted)를 바로 보여줍니다.<br />
-        게임에서 아이템 위에 마우스를 올리고 <kbd id="kbd-price">F9</kbd> → 커서 옆에 시세 툴팁이 뜹니다.<br />
-        옵션 시세는 <kbd id="kbd-pricer">Shift+F9</kbd>, 조합·목록·<strong>화폐 거래소</strong> 화면은 <kbd id="kbd-scan">F10</kbd> → 화면을 읽어 시세를 한 번에 보여줍니다.
+        <kbd id="kbd-price">F9</kbd> 아이템에 마우스를 올리고 누르면 커서 옆에 시세 툴팁이 뜹니다.<br />
+        <kbd id="kbd-pricer">Shift+F9</kbd> 레어·장비 아이템의 <strong>옵션(모드)을 직접 골라</strong> "동급 이상" 실거래 시세를 검색합니다.<br />
+        <kbd id="kbd-scan">F10</kbd> 조합·목록·<strong>화폐 거래소</strong> 화면을 읽어 보이는 아이템 시세를 한 번에 보여줍니다.
       </p>
+      <div id="url-add" class="url-add">
+        <span class="url-add-icon" aria-hidden="true">🔖</span>
+        <input
+          id="url-add-input"
+          class="url-add-input"
+          type="text"
+          aria-label="거래 검색 URL"
+          placeholder="거래 검색 URL을 붙여넣어 즐겨찾기에 추가  ·  예) poe.kakaogames.com/trade2/search/poe2/…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="url-add-btn" class="url-add-btn" type="button">＋ 추가</button>
+        <span id="url-add-msg" class="url-add-msg"></span>
+      </div>
+
       <div id="admin-hint" class="admin-hint hidden">
         <span>⚠ 게임이 <strong>관리자 권한</strong>으로 실행 중이면, 이 앱도 관리자 권한이어야 게임 위에서 F9가 동작합니다.</span>
         <button id="relaunch-admin" class="btn-admin">관리자 권한으로 재실행</button>

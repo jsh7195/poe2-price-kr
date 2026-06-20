@@ -17,6 +17,10 @@ const el = {
   search: $('search'),
   clear: $('clear'),
   hint: $('hint'),
+  urlAdd: $('url-add'),
+  urlAddInput: $('url-add-input'),
+  urlAddBtn: $('url-add-btn'),
+  urlAddMsg: $('url-add-msg'),
   results: $('results'),
   statusMsg: $('status-msg'),
   reportError: $('report-error'),
@@ -260,9 +264,12 @@ function favRow(f) {
   sub.className = 'row-en';
   const tag = document.createElement('span');
   tag.className = 'tag';
-  tag.textContent = f.kind === 'rare' ? '레어 옵션' : f.labelKr || '';
+  tag.textContent = f.kind === 'rare' ? '레어 옵션' : f.kind === 'url' ? '거래 URL' : f.labelKr || '';
   sub.appendChild(tag);
-  const detail = f.kind === 'rare' && f.mods && f.mods.length ? f.mods.join(' · ') : f.base || '';
+  let detail = '';
+  if (f.kind === 'rare' && f.mods && f.mods.length) detail = f.mods.join(' · ');
+  else if (f.kind === 'url') detail = '저장된 거래 검색 · ' + (f.id || '');
+  else detail = f.base || '';
   if (detail) sub.appendChild(document.createTextNode(' ' + detail));
   main.append(kr, sub);
 
@@ -304,7 +311,18 @@ function favRow(f) {
     }
     if (!currentQuery) renderFavorites();
   });
-  actions.append(rb, xb);
+  // 거래 URL 즐겨찾기는 "웹에서 보기" 버튼으로 원본 검색 페이지를 연다.
+  if (f.kind === 'url' && f.url) {
+    const ob = document.createElement('button');
+    ob.className = 'fav-btn';
+    ob.type = 'button';
+    ob.textContent = '↗';
+    ob.title = '웹에서 보기';
+    ob.addEventListener('click', () => window.api.openTradeUrl(f.url));
+    actions.append(ob, rb, xb);
+  } else {
+    actions.append(rb, xb);
+  }
 
   row.append(icon, main, val, actions);
   return row;
@@ -446,6 +464,7 @@ async function doSearch() {
   const q = el.search.value.trim();
   currentQuery = q;
   el.clear.classList.toggle('hidden', !q);
+  el.urlAdd.classList.toggle('hidden', !!q); // 검색 중엔 URL 추가 바 숨김(즐겨찾기/빈 화면에서만)
   if (!q) { el.hint.classList.remove('is-hidden'); renderFavorites(); return; }
   try {
     const res = await window.api.search(q);
@@ -462,6 +481,35 @@ async function doSearch() {
 function onInput() {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(doSearch, 110);
+}
+
+// ---------- 거래 URL 즐겨찾기 추가 ----------
+const URL_ADD_ERR = {
+  invalid: '유효한 PoE2 거래 URL이 아닙니다 (poe.kakaogames.com · pathofexile.com).',
+  duplicate: '이미 추가된 URL입니다.',
+};
+async function submitUrl() {
+  const url = el.urlAddInput.value.trim();
+  if (!url) return;
+  el.urlAddBtn.disabled = true;
+  el.urlAddMsg.className = 'url-add-msg';
+  el.urlAddMsg.textContent = '추가하는 중… (거래소 조회)';
+  let res;
+  try {
+    res = await window.api.favorites.addUrl(url);
+  } catch (e) {
+    res = { ok: false, error: 'fail' };
+  }
+  el.urlAddBtn.disabled = false;
+  if (res && res.ok) {
+    favorites = res.favorites || favorites;
+    el.urlAddInput.value = '';
+    el.urlAddMsg.textContent = '';
+    if (!currentQuery) renderFavorites();
+  } else {
+    el.urlAddMsg.className = 'url-add-msg error';
+    el.urlAddMsg.textContent = (res && URL_ADD_ERR[res.error]) || '추가 실패 — 잠시 후 다시 시도하세요.';
+  }
 }
 
 // ---------- 상태 반영 ----------
@@ -527,6 +575,8 @@ function applyStatus(s) {
 
 // ---------- 이벤트 ----------
 el.search.addEventListener('input', onInput);
+el.urlAddBtn.addEventListener('click', submitUrl);
+el.urlAddInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitUrl(); } });
 el.clear.addEventListener('click', () => { el.search.value = ''; el.search.focus(); doSearch(); });
 el.refresh.addEventListener('click', () => { if (!el.refresh.disabled) window.api.refresh(); });
 el.hideTray.addEventListener('click', () => { window.api.hideToTray(); });

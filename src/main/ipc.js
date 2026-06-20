@@ -8,6 +8,21 @@ const errorReport = require('./services/errorReport');
 // 공개 배포 리포(시크릿 아님 — 자동 신고가 향할 곳).
 const REPORT_REPO = { owner: 'jsh7195', repo: 'poe2-price-kr' };
 
+// 외부 브라우저로 열 수 있는 공식 PoE2 거래소 도메인(한국 카카오게임즈 + 글로벌 GGG)만 허용.
+const TRADE_URL_RE = /^https:\/\/(poe\.kakaogames\.com|(www\.)?pathofexile\.com)\//;
+
+async function openTradeExternal(url) {
+  try {
+    if (typeof url === 'string' && TRADE_URL_RE.test(url)) {
+      await shell.openExternal(url);
+      return { ok: true };
+    }
+  } catch (e) {
+    /* noop */
+  }
+  return { ok: false };
+}
+
 /**
  * 렌더러 ↔ 메인 IPC 핸들러 등록.
  * 모든 핸들러는 try/catch 로 감싸 렌더러에 일관된 형태로 반환한다.
@@ -48,18 +63,9 @@ function registerIpc(store, overlay, pricer, hotkeys) {
       return null;
     }
   });
-  // GGG 거래 페이지 열기(pathofexile.com 만 허용).
-  ipcMain.handle('pricer:openUrl', async (_evt, url) => {
-    try {
-      if (typeof url === 'string' && /^https:\/\/(www\.)?pathofexile\.com\//.test(url)) {
-        await shell.openExternal(url);
-        return { ok: true };
-      }
-    } catch (e) {
-      /* noop */
-    }
-    return { ok: false };
-  });
+  // 거래 페이지 열기 — 공식 PoE2 거래소 도메인만 허용(한국 카카오게임즈 + 글로벌 GGG).
+  ipcMain.handle('pricer:openUrl', (_evt, url) => openTradeExternal(url));
+  ipcMain.handle('app:openTradeUrl', (_evt, url) => openTradeExternal(url));
   ipcMain.handle('pricer:close', () => {
     if (pricer) pricer.hide();
     return { ok: true };
@@ -71,6 +77,7 @@ function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('favorites:addRare', (_evt, data) => store.addRareFavorite(data));
   ipcMain.handle('favorites:remove', (_evt, key) => store.removeFavorite(key));
   ipcMain.handle('favorites:reprice', (_evt, key) => store.repriceFavorite(key));
+  ipcMain.handle('favorites:addUrl', (_evt, url) => store.addUrlFavorite(typeof url === 'string' ? url : ''));
 
   // 오버레이 동작 테스트: 커서 옆에 샘플 시세 툴팁을 띄운다(F9 경로와 무관하게 표시 확인).
   ipcMain.handle('overlay:test', async () => {

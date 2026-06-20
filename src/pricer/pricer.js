@@ -312,7 +312,7 @@ function glink(url) {
   const a = document.createElement('button');
   a.className = 'glink';
   a.type = 'button';
-  a.textContent = 'GGG 거래소에서 보기 ↗';
+  a.textContent = '웹에서 보기 ↗';
   a.addEventListener('click', () => window.pricerApi.openUrl(url));
   return a;
 }

@@ -355,8 +355,98 @@ function statFilterValue(values) {
   return { min: searchMin(base) };
 }
 
+// 사용자가 브라우저로 여는 거래 페이지 베이스. 한국 서버(카카오게임즈) 거래소로 연다.
+// 예: https://poe.kakaogames.com/trade2/search/poe2/Runes%20of%20Aldur/ky6rVX25I5
+const TRADE_VIEW_BASE = 'https://poe.kakaogames.com';
+
 function tradeUrl(league, id) {
-  return `https://www.pathofexile.com/trade2/search/poe2/${encodeURIComponent(league)}/${id}`;
+  return `${TRADE_VIEW_BASE}/trade2/search/poe2/${encodeURIComponent(league)}/${id}`;
+}
+
+// 거래 URL 즐겨찾기에서 허용하는 도메인(웹 host → API base). 화이트리스트로 SSRF 차단.
+// 실측: poe.kakaogames.com 은 같은 도메인에 /api/trade2 를 서빙(GET 저장검색 200 확인).
+const TRADE_REALMS = Object.freeze({
+  'poe.kakaogames.com': 'https://poe.kakaogames.com/api/trade2',
+  'www.pathofexile.com': 'https://www.pathofexile.com/api/trade2',
+  'pathofexile.com': 'https://www.pathofexile.com/api/trade2',
+});
+
+/**
+ * 거래 검색 URL(사용자가 붙여넣음)을 안전하게 파싱.
+ *   https://poe.kakaogames.com/trade2/search/poe2/{league}/{id}
+ * 화이트리스트 도메인 + https + 경로/ID 형식 검증(경로주입·SSRF 차단). 무효면 null.
+ * @returns {null | {apiBase:string, host:string, league:string, id:string, url:string}}
+ */
+function parseTradeUrl(input) {
+  if (typeof input !== 'string' || input.length > 2048) return null;
+  let u;
+  try {
+    u = new URL(input.trim());
+  } catch (e) {
+    return null;
+  }
+  if (u.protocol !== 'https:') return null;
+  const host = u.hostname.toLowerCase();
+  const apiBase = TRADE_REALMS[host];
+  if (!apiBase) return null;
+  const m = u.pathname.match(/^\/trade2\/search\/poe2\/([^/]+)\/([^/]+)\/?$/);
+  if (!m) return null;
+  let league;
+  try {
+    league = decodeURIComponent(m[1]);
+  } catch (e) {
+    return null;
+  }
+  const id = m[2];
+  if (!league || league.length > 100) return null;
+  if (!/^[A-Za-z0-9]{1,64}$/.test(id)) return null; // 거래 검색 id 는 영숫자
+  return { apiBase, host, league, id, url: u.toString() };
+}
+
+/**
+ * 저장된 거래 검색(URL)의 현재 최저가. parsed = parseTradeUrl(url).
+ * 흐름: 1) GET 저장쿼리 → 2) 같은 쿼리로 재검색(가격 오름차순) → 3) 최저가 매물 fetch.
+ *   (GET 저장검색은 {id,query} 만 주고 결과는 안 줌 → 재실행해야 매물 id 가 나온다.)
+ * @returns {Promise<null | {divine, exalted, altAmount, altCurrency, listingCount, low, empty?, rateLimited?}>}
+ */
+async function fetchSavedSearch(parsed) {
+  if (!parsed || !parsed.apiBase || !parsed.league || !parsed.id) return null;
+  const { apiBase, league, id } = parsed;
+  // 사용자가 붙여넣은 URL 에서 유도한 호스트로 호출하므로, 신뢰 호스트라도 리다이렉트는
+  // 따라가지 않는다(redirect:'error') — 3xx 재타게팅(SSRF) 방어. trade2 JSON 은 200 직응답.
+  const req = { ...GGG_REQ, redirect: 'error' };
+  const lg = encodeURIComponent(league);
+  // 1) 저장된 쿼리 정의
+  let gj = null;
+  try {
+    gj = await _throttle('search', () => getJson(`${apiBase}/search/${lg}/${encodeURIComponent(id)}`, req));
+  } catch (e) {
+    if (e && e.status === 429) return { rateLimited: true };
+    return null;
+  }
+  if (!gj || !gj.query) return null;
+  // 2) 같은 쿼리 재실행(가격 오름차순) → 결과 매물 id + 총 개수
+  let sres = null;
+  try {
+    sres = await _throttle('search', () => postJson(`${apiBase}/search/${lg}`, { query: gj.query, sort: { price: 'asc' } }, req));
+  } catch (e) {
+    if (e && e.status === 429) return { rateLimited: true };
+    return null;
+  }
+  if (!sres || !Array.isArray(sres.result) || !sres.result.length) {
+    return { empty: true, listingCount: (sres && sres.total) || 0 };
+  }
+  // 3) 상위 N 매물 상세 → 최저가
+  const ids = sres.result.slice(0, SAMPLE_SIZE);
+  let fres = null;
+  try {
+    fres = await _throttle('fetch', () => getJson(`${apiBase}/fetch/${ids.join(',')}?query=${sres.id}`, req));
+  } catch (e) {
+    if (e && e.status === 429) return { rateLimited: true };
+    return null;
+  }
+  const price = cheapestFromRows((fres && fres.result) || [], sres.total);
+  return price || { empty: true, listingCount: sres.total || 0 };
 }
 
 /** 검색 결과(sres)의 최저가 매물을 원본 통화 그대로 반환(환율 변환 없음 → 빠름). */
@@ -478,4 +568,7 @@ module.exports = {
   median,
   signature,
   clearCache,
+  tradeUrl,
+  parseTradeUrl,
+  fetchSavedSearch,
 };

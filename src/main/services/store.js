@@ -435,6 +435,35 @@ class Store extends EventEmitter {
     return this._saveFavorites([...list, fav]);
   }
 
+  /**
+   * 거래 검색 URL(사용자가 크롬 즐겨찾기처럼 보던 것)을 즐겨찾기에 추가.
+   * URL → 저장된 검색을 실행해 현재 최저가를 붙인다. 도메인 화이트리스트로 SSRF 차단.
+   * @returns {Promise<{ok:boolean, error?:string, favorites:Array}>}
+   */
+  async addUrlFavorite(url) {
+    const parsed = ggg.parseTradeUrl(url);
+    if (!parsed) return { ok: false, error: 'invalid', favorites: await this.getFavorites() };
+    // 키는 apiBase(realm) 기준 — www/비www 같은 host 별칭이 같은 검색을 중복 등록하지 않게.
+    const key = 'url:' + parsed.apiBase + '|' + parsed.id;
+    const list = await this.getFavorites();
+    if (list.some((f) => f.key === key)) return { ok: false, error: 'duplicate', favorites: list };
+    let lastPrice = null;
+    try {
+      const p = await ggg.fetchSavedSearch(parsed);
+      // 매물 0건이면 '매물 없음'으로 저장(reprice 와 동일 표기). 조회 자체 실패면 null('미조회').
+      lastPrice = priceSnapshot(p) || (p && p.empty ? { empty: true } : null);
+    } catch (e) {
+      /* 가격 실패해도 즐겨찾기는 저장(다음에 새로고침) */
+    }
+    const fav = {
+      key, kind: 'url', url: parsed.url, host: parsed.host, league: parsed.league, id: parsed.id,
+      kr: parsed.league, labelKr: '거래 URL', base: parsed.id,
+      lastPrice, savedAt: Date.now(),
+    };
+    const favorites = await this._saveFavorites([...list, fav]);
+    return { ok: true, favorites };
+  }
+
   async removeFavorite(key) {
     const list = await this.getFavorites();
     return this._saveFavorites(list.filter((f) => f.key !== key));
@@ -449,6 +478,9 @@ class Store extends EventEmitter {
     try {
       if (fav.kind === 'catalog') {
         price = await this._priceRecord(fav.rec);
+      } else if (fav.kind === 'url') {
+        const parsed = ggg.parseTradeUrl(fav.url);
+        price = parsed ? await ggg.fetchSavedSearch(parsed) : null;
       } else {
         const filters = (fav.filters || []).map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
         price = await ggg.priceByStatFilters(this.selectedLeague, filters, {

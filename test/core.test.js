@@ -468,6 +468,35 @@ test('ggg.buildTermQuery: 자유 텍스트 폴백', () => {
   assert.equal(q.query.status.option, 'any');
 });
 
+test('ggg.tradeUrl: 한국(카카오게임즈) 거래소 도메인 + 리그명 인코딩', () => {
+  const url = ggg.tradeUrl('Runes of Aldur', 'ky6rVX25I5');
+  assert.equal(url, 'https://poe.kakaogames.com/trade2/search/poe2/Runes%20of%20Aldur/ky6rVX25I5');
+  assert.ok(url.startsWith('https://poe.kakaogames.com/'));
+  assert.ok(!url.includes('pathofexile.com')); // 글로벌 GGG 도메인 아님
+});
+
+test('ggg.parseTradeUrl: 한국/글로벌 거래 URL 파싱 + API base 매핑', () => {
+  const kr = ggg.parseTradeUrl('https://poe.kakaogames.com/trade2/search/poe2/Runes%20of%20Aldur/8rVmKDRnFV');
+  assert.equal(kr.host, 'poe.kakaogames.com');
+  assert.equal(kr.apiBase, 'https://poe.kakaogames.com/api/trade2');
+  assert.equal(kr.league, 'Runes of Aldur'); // 디코딩됨
+  assert.equal(kr.id, '8rVmKDRnFV');
+  const gl = ggg.parseTradeUrl('https://www.pathofexile.com/trade2/search/poe2/Standard/abcDEF123');
+  assert.equal(gl.apiBase, 'https://www.pathofexile.com/api/trade2');
+  assert.equal(gl.league, 'Standard');
+});
+
+test('ggg.parseTradeUrl: 화이트리스트 밖/형식오류는 null (SSRF·주입 차단)', () => {
+  assert.equal(ggg.parseTradeUrl('https://evil.com/trade2/search/poe2/x/y'), null); // 허용 안 된 도메인
+  assert.equal(ggg.parseTradeUrl('https://poe.kakaogames.com.evil.com/trade2/search/poe2/x/y'), null); // 서브도메인 사칭
+  assert.equal(ggg.parseTradeUrl('http://poe.kakaogames.com/trade2/search/poe2/x/y'), null); // https 아님
+  assert.equal(ggg.parseTradeUrl('https://poe.kakaogames.com/trade2/search/poe2/L/bad..id'), null); // id 영숫자 아님
+  assert.equal(ggg.parseTradeUrl('https://poe.kakaogames.com/other/path'), null); // 경로 형식 불일치
+  assert.equal(ggg.parseTradeUrl('https://poe.kakaogames.com/trade2/search/poe2/L/ID/extra'), null); // 꼬리 경로
+  assert.equal(ggg.parseTradeUrl('not a url'), null);
+  assert.equal(ggg.parseTradeUrl(null), null);
+});
+
 test('ggg.signature: 카테고리+이름+기반+타락 조합', () => {
   const a = ggg.signature({ categoryKey: 'currency', enNorm: 'chaosorb', baseType: '', corrupted: false });
   const b = ggg.signature({ categoryKey: 'currency', enNorm: 'chaosorb', baseType: '', corrupted: true });

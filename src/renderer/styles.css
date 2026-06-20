@@ -193,6 +193,48 @@ body {
 .btn-admin:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .btn-admin:disabled { opacity: 0.6; cursor: default; transform: none; }
 
+/* 거래 URL 즐겨찾기 추가 바 */
+.url-add {
+  max-width: 720px;
+  margin: 12px auto 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.url-add-icon { font-size: 14px; opacity: 0.85; }
+.url-add-input {
+  flex: 1;
+  min-width: 240px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12.5px;
+  padding: 8px 12px;
+  user-select: text;
+  transition: border-color var(--dur) var(--ease);
+}
+.url-add-input::placeholder { color: var(--muted-2); }
+.url-add-input:focus { outline: none; border-color: var(--gold); }
+.url-add-btn {
+  flex: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gold-bright);
+  background: var(--chip-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.url-add-btn:hover { background: var(--surface-hover); border-color: var(--gold); }
+.url-add-btn:disabled { opacity: 0.55; cursor: default; }
+.url-add-msg { flex-basis: 100%; font-size: 12px; color: var(--muted); min-height: 0; }
+.url-add-msg.error { color: var(--neg); }
+
 .update-bar {
   max-width: 720px;
   margin: 10px auto 0;
