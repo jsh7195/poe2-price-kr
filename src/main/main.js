@@ -19,6 +19,7 @@ const { Overlay } = require('./overlay');
 const { Pricer } = require('./pricer');
 const { createHotkeyController } = require('./hotkey');
 const { setupUpdater } = require('./updater');
+const { isRunAsAdminSet, setRunAsAdmin } = require('./services/elevation');
 
 const ASSET = (f) => path.join(__dirname, '..', '..', 'assets', f);
 
@@ -36,11 +37,28 @@ let isQuiting = false;
 let notifiedTray = false;
 
 // 단일 인스턴스 보장(중복 실행 시 기존 창 표시). 스크린샷/개발 모드(POE_SHOT)는 우회.
-if (!process.env.POE_SHOT && !app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
-  if (!process.env.POE_SHOT) app.on('second-instance', () => showMainWindow());
+if (process.env.POE_SHOT) {
   start();
+} else {
+  bootWithLock();
+}
+
+/**
+ * 단일 인스턴스 락 획득. 관리자 재실행 핸드오프(--relaunch)면 직전(비상승) 인스턴스가 아직
+ * 종료 중일 수 있으므로 잠깐 재시도한다 — 이게 없으면 상승 인스턴스가 락 경쟁에서 밀려
+ * 조용히 종료("관리자 권한으로 재실행해도 실행이 안됨")되는 일이 생긴다.
+ */
+function bootWithLock(attempt = 0) {
+  if (app.requestSingleInstanceLock()) {
+    app.on('second-instance', () => showMainWindow());
+    start();
+    return;
+  }
+  if (process.argv.includes('--relaunch') && attempt < 15) {
+    setTimeout(() => bootWithLock(attempt + 1), 350); // 직전 인스턴스가 락을 놓을 때까지 대기
+    return;
+  }
+  app.quit();
 }
 
 function createWindow(startHidden = false) {
@@ -103,9 +121,10 @@ function createWindow(startHidden = false) {
 function relaunchElevated() {
   const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
   const exe = process.execPath;
+  // --relaunch: 상승 인스턴스가 락을 재시도하도록 알리는 표식(bootWithLock 참고).
   const inner = app.isPackaged
-    ? `Start-Sleep -Milliseconds 700; Start-Process -FilePath ${q(exe)} -Verb RunAs`
-    : `Start-Sleep -Milliseconds 700; Start-Process -FilePath ${q(exe)} -ArgumentList ${q(app.getAppPath())} -Verb RunAs`;
+    ? `Start-Sleep -Milliseconds 700; Start-Process -FilePath ${q(exe)} -ArgumentList '--relaunch' -Verb RunAs`
+    : `Start-Sleep -Milliseconds 700; Start-Process -FilePath ${q(exe)} -ArgumentList ${q(app.getAppPath())},'--relaunch' -Verb RunAs`;
   const b64 = Buffer.from(inner, 'utf16le').toString('base64');
   const child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', b64], {
     detached: true,
@@ -217,6 +236,15 @@ function start() {
         logMain('[relaunch] 오류: ' + (e && e.message ? e.message : e));
         return { ok: false, error: String(e && e.message ? e.message : e) };
       }
+    });
+
+    // "항상 관리자 권한으로 실행" — Windows 호환성 플래그(HKCU). 켜면 매 실행마다(업데이트 후 포함)
+    // 자동으로 UAC 상승되어, 매번 우클릭/버튼 없이도 관리자 권한으로 뜬다.
+    ipcMain.handle('app:getAlwaysAdmin', () => isRunAsAdminSet(process.execPath));
+    ipcMain.handle('app:setAlwaysAdmin', async (_evt, on) => {
+      const ok = await setRunAsAdmin(process.execPath, !!on);
+      logMain(`[always-admin] set=${!!on} ok=${ok} exe=${process.execPath}`);
+      return { ok, value: await isRunAsAdminSet(process.execPath) };
     });
 
     if (process.platform === 'win32' && !process.env.POE_SHOT) {

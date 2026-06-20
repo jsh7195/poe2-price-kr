@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('api', {
   reportError: (payload) => ipcRenderer.invoke('app:reportError', payload),
   testOverlay: () => ipcRenderer.invoke('overlay:test'),
   relaunchElevated: () => ipcRenderer.invoke('app:relaunchElevated'),
+  getAlwaysAdmin: () => ipcRenderer.invoke('app:getAlwaysAdmin'),
+  setAlwaysAdmin: (on) => ipcRenderer.invoke('app:setAlwaysAdmin', on),
   hideToTray: () => ipcRenderer.invoke('app:hideToTray'),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),

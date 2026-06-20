@@ -49,6 +49,16 @@ async function runScreenshots(app, win, store, overlay, pricer, outDir) {
     await delay(900);
     await save('shot_empty.png');
 
+    // 관리자 권한 안내(+ "항상 관리자 권한으로 실행" 체크박스) — 평소엔 상승 여부로 토글되므로 강제 표시.
+    await win.webContents.executeJavaScript(
+      `document.getElementById('admin-hint').classList.remove('hidden');true`
+    );
+    await delay(300);
+    await save('shot_admin_hint.png');
+    await win.webContents.executeJavaScript(
+      `document.getElementById('admin-hint').classList.add('hidden');true`
+    );
+
     const queries = ['영혼 핵', '헤드헌터', '없는아이템검색테스트'];
     for (let i = 0; i < queries.length; i++) {
       await win.webContents.executeJavaScript(

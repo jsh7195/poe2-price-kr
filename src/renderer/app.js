@@ -14,6 +14,7 @@ const el = {
   appVersion: $('app-version'),
   adminHint: $('admin-hint'),
   relaunchAdmin: $('relaunch-admin'),
+  alwaysAdmin: $('always-admin'),
   search: $('search'),
   clear: $('clear'),
   hint: $('hint'),
@@ -584,6 +585,19 @@ el.relaunchAdmin.addEventListener('click', () => {
   el.relaunchAdmin.textContent = '재실행 중…';
   el.relaunchAdmin.disabled = true;
   window.api.relaunchElevated();
+});
+// "항상 관리자 권한으로 실행" — 현재 상태 로드 + 토글 저장
+window.api.getAlwaysAdmin().then((on) => { el.alwaysAdmin.checked = !!on; }).catch(() => {});
+el.alwaysAdmin.addEventListener('change', async () => {
+  const want = el.alwaysAdmin.checked;
+  el.alwaysAdmin.disabled = true;
+  try {
+    const res = await window.api.setAlwaysAdmin(want);
+    el.alwaysAdmin.checked = !!(res && res.value);
+  } catch (e) {
+    el.alwaysAdmin.checked = !want; // 실패 시 원복
+  }
+  el.alwaysAdmin.disabled = false;
 });
 el.reportError.addEventListener('click', () => {
   const s = lastStatus || {};
