@@ -749,6 +749,23 @@ test('favorites: addRare 추가/중복방지/삭제 + 디스크 영속', async (
   assert.ok(events >= 1); // 변경 시 이벤트 방출
 });
 
+test('store.getTravelTarget: 즐겨찾기 종류별 은신처 이동 대상', () => {
+  const store = new Store(os.tmpdir());
+  store.selectedLeague = 'Runes of Aldur';
+  // URL 즐겨찾기 → 그 도메인/저장검색
+  const u = store.getTravelTarget({ kind: 'url', url: 'https://poe.kakaogames.com/trade2/search/poe2/Runes%20of%20Aldur/8rVmKDRnFV' });
+  assert.deepEqual(u, { host: 'poe.kakaogames.com', league: 'Runes of Aldur', savedId: '8rVmKDRnFV' });
+  // 레어 → KR 서버 + 검색바디(소켓 필터 포함)
+  const r = store.getTravelTarget({ kind: 'rare', filters: [{ id: 'explicit.stat_x', min: 10 }], categoryId: 'armour.boots', sockets: 2 });
+  assert.equal(r.host, 'poe.kakaogames.com');
+  assert.equal(r.searchBody.filters.equipment_filters.filters.rune_sockets.min, 2);
+  // 카탈로그(유니크) → 이름 검색
+  const c = store.getTravelTarget({ kind: 'catalog', rec: { categoryKey: 'uniqueArmours', en: 'Mageblood', enNorm: 'mageblood', baseType: 'Heavy Belt' } });
+  assert.equal(c.searchBody.query.name, 'Mageblood');
+  // 무효 URL → null
+  assert.equal(store.getTravelTarget({ kind: 'url', url: 'https://evil.com/x' }), null);
+});
+
 test('favorites: setFavoriteLabel 라벨 설정/해제(+길이 제한)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'favlabel-'));
   const store = new Store(dir);

@@ -42,7 +42,7 @@ async function openTradeExternal(url) {
  * 렌더러 ↔ 메인 IPC 핸들러 등록.
  * 모든 핸들러는 try/catch 로 감싸 렌더러에 일관된 형태로 반환한다.
  */
-function registerIpc(store, overlay, pricer, hotkeys) {
+function registerIpc(store, overlay, pricer, hotkeys, trade) {
   ipcMain.handle('app:getStatus', () => store.status());
 
   // --- 진단 정보 복사(친구 디버깅용) ---
@@ -129,14 +129,32 @@ function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('favorites:reprice', (_evt, key) => store.repriceFavorite(key));
   ipcMain.handle('favorites:addUrl', (_evt, url) => store.addUrlFavorite(typeof url === 'string' ? url : ''));
   ipcMain.handle('favorites:setLabel', (_evt, key, label) => store.setFavoriteLabel(key, typeof label === 'string' ? label : ''));
-  // "은신처로 이동" — 현재 최저가 매물의 거래 귓속말을 클립보드에 복사(게임 채팅에 붙여넣기).
-  ipcMain.handle('favorites:whisper', async (_evt, key) => {
+  // "은신처로 이동" — 로그인된 거래소 세션으로 게임 클라이언트를 판매자 은신처로 이동시킨다.
+  // 미로그인이면 거래소 로그인 창을 띄우고 login_needed 를 반환(사용자가 로그인 후 다시 시도).
+  ipcMain.handle('favorites:travel', async (_evt, key) => {
     try {
-      const res = await store.getFavoriteWhisper(key);
-      if (res && res.ok && res.whisper) clipboard.writeText(res.whisper);
-      return res;
+      if (!trade) return { ok: false, reason: 'error' };
+      const target = await store.resolveTravelTarget(key);
+      if (!target) return { ok: false, reason: 'unsupported' };
+      return await trade.travel(target);
     } catch (e) {
       return { ok: false, reason: 'error' };
+    }
+  });
+  // 거래소 로그인 창 수동 열기.
+  ipcMain.handle('favorites:login', async (_evt, key) => {
+    try {
+      if (!trade) return { ok: false };
+      const target = await store.resolveTravelTarget(key);
+      const host = (target && target.host) || 'poe.kakaogames.com';
+      const league = (target && target.league) || store.selectedLeague || '';
+      const landing = target && target.savedId
+        ? `https://${host}/trade2/search/poe2/${encodeURIComponent(league)}/${encodeURIComponent(target.savedId)}`
+        : `https://${host}/trade2`;
+      trade.showLogin(host, landing);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false };
     }
   });
 

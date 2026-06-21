@@ -349,30 +349,33 @@ function favRow(f) {
     }
     if (!currentQuery) renderFavorites();
   });
-  // "은신처로 이동" — 현재 최저가 매물의 거래 귓속말을 복사(게임 채팅에 붙여넣기).
+  // "은신처로 이동" — 로그인된 거래소 세션으로 게임 캐릭터를 최저가 판매자 은신처로 이동.
+  const HB_TITLE = '은신처로 이동(최저가 판매자에게)';
   const hb = document.createElement('button');
   hb.className = 'fav-btn';
   hb.type = 'button';
   hb.textContent = '🏠';
-  hb.title = '은신처로 이동(최저가 판매자 귓속말 복사)';
+  hb.title = HB_TITLE;
   hb.addEventListener('click', async () => {
     hb.disabled = true;
     const prev = hb.textContent;
     hb.textContent = '…';
     let res;
     try {
-      res = await window.api.favorites.whisper(f.key);
+      res = await window.api.favorites.travel(f.key);
     } catch (e) {
       res = { ok: false, reason: 'error' };
     }
     if (res && res.ok) {
       hb.textContent = '✓';
-      hb.title = '귓속말 복사됨' + (res.seller ? ' — ' + res.seller : '') + ' · 게임 채팅(Enter)에 붙여넣기';
+      hb.title = '이동 명령 전송됨' + (res.seller ? ' — ' + res.seller : '') + ' (게임 확인)';
     } else {
-      hb.textContent = '✕';
-      hb.title = WHISPER_ERR[res && res.reason] || '복사 실패';
+      hb.textContent = (res && res.reason === 'login_needed') ? '🔑' : '✕';
+      hb.title = TRAVEL_ERR[res && res.reason] || '이동 실패';
+      el.statusMsg.className = 'status-msg warn';
+      el.statusMsg.textContent = TRAVEL_ERR[res && res.reason] || '은신처 이동 실패';
     }
-    setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = '은신처로 이동(최저가 판매자 귓속말 복사)'; }, 2600);
+    setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = HB_TITLE; }, 2800);
   });
   // 라벨(메모) 편집 버튼 — 어떤 즐겨찾기인지 구분용.
   const lb = document.createElement('button');
@@ -558,11 +561,13 @@ const URL_ADD_ERR = {
   invalid: '유효한 PoE2 거래 URL이 아닙니다 (poe.kakaogames.com · pathofexile.com).',
   duplicate: '이미 추가된 URL입니다.',
 };
-const WHISPER_ERR = {
-  no_listing: '현재 매물 없음 — 귓속말 불가',
+const TRAVEL_ERR = {
+  login_needed: '거래소 로그인 필요 — 창에서 로그인 후 다시',
+  no_listing: '현재 매물 없음',
+  no_token: '이동 토큰 없음(로그인 확인)',
   rate_limited: '조회 한도 — 잠시 후 다시',
-  error: '복사 실패',
-  not_found: '복사 실패',
+  unsupported: '이동을 지원하지 않는 항목',
+  error: '이동 실패',
 };
 async function submitUrl() {
   const url = el.urlAddInput.value.trim();

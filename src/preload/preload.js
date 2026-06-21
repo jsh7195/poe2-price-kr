@@ -18,7 +18,8 @@ contextBridge.exposeInMainWorld('api', {
     remove: (key) => ipcRenderer.invoke('favorites:remove', key),
     reprice: (key) => ipcRenderer.invoke('favorites:reprice', key),
     setLabel: (key, label) => ipcRenderer.invoke('favorites:setLabel', key, label),
-    whisper: (key) => ipcRenderer.invoke('favorites:whisper', key),
+    travel: (key) => ipcRenderer.invoke('favorites:travel', key),
+    login: (key) => ipcRenderer.invoke('favorites:login', key),
   },
   openTradeUrl: (url) => ipcRenderer.invoke('app:openTradeUrl', url),
   /** 즐겨찾기 변경 구독(인게임에서 담아도 반영). 해제 함수 반환. */
