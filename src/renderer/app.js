@@ -376,9 +376,10 @@ function favRow(f) {
       hb.textContent = needLogin ? '🔑' : '✕';
       hb.title = TRAVEL_ERR[res && res.reason] || '이동 실패';
       el.statusMsg.className = 'status-msg warn';
+      // 원인 + 진단(상태코드)을 함께 표시해 "팔림 vs API오류"를 구분할 수 있게.
       el.statusMsg.textContent = needLogin
         ? '거래소 로그인 창이 열렸습니다 — 카카오 로그인 후 🏠 를 다시 눌러주세요.'
-        : (TRAVEL_ERR[res && res.reason] || '은신처 이동 실패');
+        : (TRAVEL_ERR[res && res.reason] || '은신처 이동 실패') + travelDiagText(res && res.diag);
     }
     setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = HB_TITLE; }, 2800);
   });
@@ -568,12 +569,25 @@ const URL_ADD_ERR = {
 };
 const TRAVEL_ERR = {
   login_needed: '거래소 로그인 필요 — 창에서 로그인 후 다시',
-  no_listing: '현재 매물 없음',
-  no_token: '이동 토큰 없음(로그인 확인)',
-  rate_limited: '조회 한도 — 잠시 후 다시',
+  no_listing: '현재 매물 없음(팔렸거나 조건에 맞는 매물 없음)',
+  no_token: '이동 토큰 없음 — 로그인이 풀렸을 수 있음(다시 로그인)',
+  rate_limited: '조회 한도 — 30초 후 다시',
+  whisper_failed: '거래 서버가 이동을 거부함(매물이 막 팔렸거나 판매자 오프라인)',
   unsupported: '이동을 지원하지 않는 항목',
-  error: '이동 실패',
+  error: '이동 실패(일시 오류)',
 };
+/** 진단 객체를 사람이 읽을 짧은 문자열로(화면 표시용). */
+function travelDiagText(diag) {
+  if (!diag || typeof diag !== 'object') return '';
+  const bits = [];
+  if (diag.step) bits.push('단계 ' + diag.step);
+  if (diag.searchStatus) bits.push('검색 ' + diag.searchStatus);
+  if (diag.resultN != null) bits.push('매물 ' + diag.resultN);
+  if (diag.fetchStatus) bits.push('상세 ' + diag.fetchStatus);
+  if (diag.hasToken != null) bits.push('토큰 ' + (diag.hasToken ? 'O' : 'X'));
+  if (diag.whisperStatus) bits.push('이동 ' + diag.whisperStatus);
+  return bits.length ? ' [' + bits.join(' · ') + ']' : '';
+}
 async function submitUrl() {
   const url = el.urlAddInput.value.trim();
   if (!url) return;

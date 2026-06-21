@@ -190,40 +190,62 @@ function buildTravelScript({ league, savedId, searchBody }) {
     const base = location.origin + '/api/trade2';
     const lg = encodeURIComponent(A.league);
     const J = { 'content-type': 'application/json', 'x-requested-with': 'XMLHttpRequest' };
+    const d = { step: 'start' }; // 진단: 어디까지 갔고 각 단계 상태코드
     try {
       // 1) 검색 쿼리 확보: 저장검색이면 GET, 아니면 전달받은 검색바디.
       let query = A.searchBody;
       if (!query && A.savedId) {
+        d.step = 'getQuery';
         const g = await fetch(base + '/search/' + lg + '/' + encodeURIComponent(A.savedId), { credentials: 'include' });
-        if (g.status === 401) return { ok:false, reason:'login_needed' };
+        d.getStatus = g.status;
+        if (g.status === 401) return { ok:false, reason:'login_needed', diag:d };
         const gj = await g.json().catch(() => null);
         query = gj && gj.query;
       }
-      if (!query) return { ok:false, reason:'error' };
+      if (!query) return { ok:false, reason:'error', diag:d };
       // 2) 가격 오름차순 재검색.
+      d.step = 'search';
       const s = await fetch(base + '/search/' + lg, { method:'POST', credentials:'include', headers:J,
         body: JSON.stringify({ query: query, sort: { price: 'asc' } }) });
-      if (s.status === 401) return { ok:false, reason:'login_needed' };
+      d.searchStatus = s.status;
+      if (s.status === 401) return { ok:false, reason:'login_needed', diag:d };
+      if (s.status === 429) return { ok:false, reason:'rate_limited', diag:d };
       const sj = await s.json().catch(() => null);
-      if (!sj || !Array.isArray(sj.result) || !sj.result.length) return { ok:false, reason:'no_listing' };
+      d.total = sj && sj.total;
+      d.resultN = sj && Array.isArray(sj.result) ? sj.result.length : 0;
+      if (!sj || !d.resultN) return { ok:false, reason:'no_listing', diag:d };
       // 3) 최저가 매물 상세(인증 시 whisper_token 포함).
+      d.step = 'fetch';
       const ids = sj.result.slice(0, 1).join(',');
       const f = await fetch(base + '/fetch/' + ids + '?query=' + sj.id, { credentials: 'include' });
-      if (f.status === 401) return { ok:false, reason:'login_needed' };
+      d.fetchStatus = f.status;
+      if (f.status === 401) return { ok:false, reason:'login_needed', diag:d };
+      if (f.status === 429) return { ok:false, reason:'rate_limited', diag:d };
       const fj = await f.json().catch(() => null);
       const L = fj && fj.result && fj.result[0] && fj.result[0].listing;
-      const token = L && L.whisper_token;
+      d.hasListing = !!L;
+      d.listingKeys = L ? Object.keys(L).join(',') : null; // whisper_token 필드명 확인용
+      // 토큰 후보(필드명이 다를 수 있어 여러 곳 탐색).
+      const token = L && (L.whisper_token || L.hideout_token || (L.whisper && L.whisper.token));
       const seller = L && L.account && (L.account.lastCharacterName || L.account.name) || null;
-      if (!token) return { ok:false, reason: L ? 'no_token' : 'no_listing', seller };
+      d.hasToken = !!token;
+      if (!L) return { ok:false, reason:'no_listing', diag:d };
+      if (!token) return { ok:false, reason:'no_token', seller, diag:d };
       // 4) 은신처 이동(거래 귓속말 토큰 전송).
+      d.step = 'whisper';
       const w = await fetch(base + '/whisper', { method:'POST', credentials:'include', headers:J,
-        body: JSON.stringify({ token: token, continue: true }) });
-      if (w.status === 401) return { ok:false, reason:'login_needed', seller };
-      if (w.status === 429) return { ok:false, reason:'rate_limited', seller };
-      if (!w.ok) return { ok:false, reason:'error', seller };
-      return { ok:true, seller };
+        body: JSON.stringify({ token: token }) });
+      d.whisperStatus = w.status;
+      if (w.status === 401) return { ok:false, reason:'login_needed', seller, diag:d };
+      if (w.status === 429) return { ok:false, reason:'rate_limited', seller, diag:d };
+      if (!w.ok) {
+        d.whisperBody = (await w.text().catch(() => '')).slice(0, 200);
+        return { ok:false, reason:'whisper_failed', seller, diag:d };
+      }
+      return { ok:true, seller, diag:d };
     } catch (e) {
-      return { ok:false, reason:'error' };
+      d.error = String(e && e.message ? e.message : e).slice(0, 200);
+      return { ok:false, reason:'error', diag:d };
     }
   })()`;
 }
