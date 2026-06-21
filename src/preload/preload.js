@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('api', {
   relaunchElevated: () => ipcRenderer.invoke('app:relaunchElevated'),
   getAlwaysAdmin: () => ipcRenderer.invoke('app:getAlwaysAdmin'),
   setAlwaysAdmin: (on) => ipcRenderer.invoke('app:setAlwaysAdmin', on),
+  copyDiagnostics: () => ipcRenderer.invoke('app:copyDiagnostics'),
+  openLogFolder: () => ipcRenderer.invoke('app:openLogFolder'),
   hideToTray: () => ipcRenderer.invoke('app:hideToTray'),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),

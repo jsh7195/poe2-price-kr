@@ -25,6 +25,7 @@ const el = {
   results: $('results'),
   statusMsg: $('status-msg'),
   reportError: $('report-error'),
+  copyDiag: $('copy-diag'),
   statusMeta: $('status-meta'),
   overlay: $('overlay'),
   overlayMsg: $('overlay-msg'),
@@ -611,6 +612,17 @@ el.reportError.addEventListener('click', () => {
       done();
     })
     .catch(done);
+});
+el.copyDiag.addEventListener('click', async () => {
+  const prev = el.copyDiag.textContent;
+  el.copyDiag.disabled = true;
+  try {
+    const res = await window.api.copyDiagnostics();
+    el.copyDiag.textContent = res && res.ok ? '✓ 복사됨 — 붙여넣기 해서 보내주세요' : '복사 실패';
+  } catch (e) {
+    el.copyDiag.textContent = '복사 실패';
+  }
+  setTimeout(() => { el.copyDiag.textContent = prev; el.copyDiag.disabled = false; }, 2600);
 });
 el.league.addEventListener('change', () => { window.api.setLeague(el.league.value); });
 document.addEventListener('keydown', (e) => {

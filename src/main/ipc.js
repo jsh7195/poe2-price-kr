@@ -1,9 +1,24 @@
 'use strict';
 
-const { ipcMain, screen, shell, app } = require('electron');
+const { ipcMain, screen, shell, app, clipboard } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { redact } = require('./services/redact');
 const { DEFAULT_HOTKEYS } = require('./services/accelerator');
 const errorReport = require('./services/errorReport');
+
+/** f9-debug.log 의 마지막 N줄을 읽어 민감정보를 가린다(진단 복사용). */
+function tailDebugLog(maxLines = 40) {
+  try {
+    const p = path.join(app.getPath('userData'), 'f9-debug.log');
+    const text = fs.readFileSync(p, 'utf8');
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    return redact(lines.slice(-maxLines).join('\n'));
+  } catch (e) {
+    return '(로그 파일 없음 — 아직 F9/F10 을 한 번도 누르지 않았을 수 있음)';
+  }
+}
 
 // 공개 배포 리포(시크릿 아님 — 자동 신고가 향할 곳).
 const REPORT_REPO = { owner: 'jsh7195', repo: 'poe2-price-kr' };
@@ -29,6 +44,41 @@ async function openTradeExternal(url) {
  */
 function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('app:getStatus', () => store.status());
+
+  // --- 진단 정보 복사(친구 디버깅용) ---
+  // 게임 화면이 아니라 "앱 상태"를 한 번에 보기 위한 텍스트를 클립보드에 복사한다.
+  // 버전·관리자권한·단축키 등록·OS·최근 F10/F9 로그(마스킹) 를 담는다.
+  ipcMain.handle('app:copyDiagnostics', () => {
+    try {
+      const s = store.status();
+      const hk = hotkeys ? hotkeys.getCurrent() : { ...DEFAULT_HOTKEYS };
+      const yn = (v) => (v === true ? '예' : v === false ? '아니오' : '확인 안됨');
+      const text = [
+        '=== PoE2 시세검색 진단 ===',
+        `버전: v${app.getVersion()}`,
+        `관리자 권한: ${yn(s.elevated)}`,
+        `단축키 등록(F9 시세): ${yn(s.hotkeyOk)}`,
+        `단축키 맵: 시세=${hk.price} · 스캔=${hk.scan} · 옵션=${hk.pricer}`,
+        `리그: ${s.leagueName || '-'} · 아이템 ${s.count || 0}개 · 상태 ${s.phase}`,
+        `OS: ${os.release()} (${process.arch}) · Electron ${process.versions.electron}`,
+        '--- 최근 로그(마스킹) ---',
+        tailDebugLog(40),
+      ].join('\n');
+      clipboard.writeText(text);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: redact(String(e && e.message ? e.message : e)) };
+    }
+  });
+  // 로그 폴더 열기(친구가 직접 파일을 보낼 때).
+  ipcMain.handle('app:openLogFolder', async () => {
+    try {
+      await shell.openPath(app.getPath('userData'));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false };
+    }
+  });
 
   // --- 설정: 전역 단축키 변경 ---
   ipcMain.handle('settings:getHotkeys', () => ({

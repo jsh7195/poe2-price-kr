@@ -59,6 +59,15 @@ async function runScreenshots(app, win, store, overlay, pricer, outDir) {
       `document.getElementById('admin-hint').classList.add('hidden');true`
     );
 
+    // 진단 정보 복사 버튼 동작 확인(클립보드에 진단 텍스트가 담기는지)
+    await win.webContents.executeJavaScript(`document.getElementById('copy-diag').click();true`);
+    await delay(500);
+    try {
+      const { clipboard } = require('electron');
+      console.log('[shot] 진단 클립보드:\n' + clipboard.readText().split('\n').slice(0, 8).join('\n'));
+    } catch (e) { /* noop */ }
+    await save('shot_diag.png');
+
     const queries = ['영혼 핵', '헤드헌터', '없는아이템검색테스트'];
     for (let i = 0; i < queries.length; i++) {
       await win.webContents.executeJavaScript(
