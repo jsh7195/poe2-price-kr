@@ -369,11 +369,16 @@ function favRow(f) {
     if (res && res.ok) {
       hb.textContent = '✓';
       hb.title = '이동 명령 전송됨' + (res.seller ? ' — ' + res.seller : '') + ' (게임 확인)';
+      el.statusMsg.className = 'status-msg';
+      el.statusMsg.textContent = '은신처 이동 명령 전송됨' + (res.seller ? ' — ' + res.seller : '');
     } else {
-      hb.textContent = (res && res.reason === 'login_needed') ? '🔑' : '✕';
+      const needLogin = res && res.reason === 'login_needed';
+      hb.textContent = needLogin ? '🔑' : '✕';
       hb.title = TRAVEL_ERR[res && res.reason] || '이동 실패';
       el.statusMsg.className = 'status-msg warn';
-      el.statusMsg.textContent = TRAVEL_ERR[res && res.reason] || '은신처 이동 실패';
+      el.statusMsg.textContent = needLogin
+        ? '거래소 로그인 창이 열렸습니다 — 카카오 로그인 후 🏠 를 다시 눌러주세요.'
+        : (TRAVEL_ERR[res && res.reason] || '은신처 이동 실패');
     }
     setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = HB_TITLE; }, 2800);
   });
@@ -770,6 +775,12 @@ window.api.onFavorites((list) => {
 window.api.favorites.list().then((list) => {
   favorites = list || [];
   if (!currentQuery) renderFavorites();
+});
+
+// ---------- 거래소 로그인 완료 알림 ----------
+window.api.onTradeLoggedIn(() => {
+  el.statusMsg.className = 'status-msg';
+  el.statusMsg.textContent = '✓ 거래소 로그인 완료 — 이제 🏠 (은신처로 이동)이 동작합니다.';
 });
 
 // ---------- 시작 ----------

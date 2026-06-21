@@ -32,6 +32,8 @@ class TradeSession {
   constructor(logger) {
     this.windows = new Map(); // host → BrowserWindow
     this.log = typeof logger === 'function' ? logger : () => {};
+    this.loggedIn = new Set(); // 로그인 감지된 host
+    this.onLoggedIn = null; // (host) => void — 로그인 완료 시 렌더러 알림(main 이 주입)
   }
 
   _ensureWindow(host, landingUrl) {
@@ -53,6 +55,23 @@ class TradeSession {
     });
     win.on('closed', () => {
       if (this.windows.get(host) === win) this.windows.delete(host);
+    });
+    // 로그인 완료 감지: 로그인 리다이렉트(member.kakaogames.com/login, /login/kakao …)를 거쳐
+    // 거래 도메인 본문으로 돌아오면 로그인된 것으로 본다 → 창을 숨기고 렌더러에 알린다.
+    win.webContents.on('did-navigate', (_e, url) => {
+      try {
+        const u = new URL(url);
+        if (u.hostname.toLowerCase() === host && !u.pathname.toLowerCase().startsWith('/login')) {
+          if (!this.loggedIn.has(host)) {
+            this.loggedIn.add(host);
+            this.log('[trade] 로그인 감지: ' + host);
+            if (typeof this.onLoggedIn === 'function') this.onLoggedIn(host);
+          }
+          if (win.isVisible()) setTimeout(() => { if (!win.isDestroyed()) win.hide(); }, 800);
+        }
+      } catch (_) {
+        /* noop */
+      }
     });
     win.loadURL(landingUrl).catch(() => {});
     this.windows.set(host, win);

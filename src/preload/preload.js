@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('api', {
     login: (key) => ipcRenderer.invoke('favorites:login', key),
   },
   openTradeUrl: (url) => ipcRenderer.invoke('app:openTradeUrl', url),
+  onTradeLoggedIn: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('trade:loggedin', listener);
+    return () => ipcRenderer.removeListener('trade:loggedin', listener);
+  },
   /** 즐겨찾기 변경 구독(인게임에서 담아도 반영). 해제 함수 반환. */
   onFavorites: (callback) => {
     const listener = (_evt, list) => callback(list);
