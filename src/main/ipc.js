@@ -128,6 +128,7 @@ function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('favorites:remove', (_evt, key) => store.removeFavorite(key));
   ipcMain.handle('favorites:reprice', (_evt, key) => store.repriceFavorite(key));
   ipcMain.handle('favorites:addUrl', (_evt, url) => store.addUrlFavorite(typeof url === 'string' ? url : ''));
+  ipcMain.handle('favorites:setLabel', (_evt, key, label) => store.setFavoriteLabel(key, typeof label === 'string' ? label : ''));
 
   // 오버레이 동작 테스트: 커서 옆에 샘플 시세 툴팁을 띄운다(F9 경로와 무관하게 표시 확인).
   ipcMain.handle('overlay:test', async () => {

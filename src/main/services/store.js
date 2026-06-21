@@ -483,6 +483,14 @@ class Store extends EventEmitter {
     return this._saveFavorites(list.filter((f) => f.key !== key));
   }
 
+  /** 즐겨찾기에 사용자 라벨(메모)을 설정/해제. 빈 문자열이면 라벨 제거. */
+  async setFavoriteLabel(key, label) {
+    const list = await this.getFavorites();
+    if (!list.some((f) => f.key === key)) return list;
+    const clean = typeof label === 'string' ? label.trim().slice(0, 60) : '';
+    return this._saveFavorites(list.map((f) => (f.key === key ? { ...f, label: clean || undefined } : f)));
+  }
+
   /** 즐겨찾기 한 건의 시세를 다시 조회해 갱신. */
   async repriceFavorite(key) {
     const list = await this.getFavorites();

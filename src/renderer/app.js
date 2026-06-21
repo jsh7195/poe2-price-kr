@@ -261,7 +261,8 @@ function favRow(f) {
   main.className = 'row-main';
   const kr = document.createElement('div');
   kr.className = 'row-kr';
-  kr.textContent = f.kr;
+  // 라벨(사용자 메모)이 있으면 제목으로, 원래 이름은 보조줄로 내린다.
+  kr.textContent = f.label || f.kr;
   const sub = document.createElement('div');
   sub.className = 'row-en';
   const tag = document.createElement('span');
@@ -269,11 +270,46 @@ function favRow(f) {
   tag.textContent = f.kind === 'rare' ? '레어 옵션' : f.kind === 'url' ? '거래 URL' : f.labelKr || '';
   sub.appendChild(tag);
   let detail = '';
-  if (f.kind === 'rare' && f.mods && f.mods.length) detail = f.mods.join(' · ');
+  if (f.label) detail = f.kr + (f.kind === 'url' ? ' · ' + (f.id || '') : ''); // 라벨이 제목이면 원래 이름을 보조로
+  else if (f.kind === 'rare' && f.mods && f.mods.length) detail = f.mods.join(' · ');
   else if (f.kind === 'url') detail = '저장된 거래 검색 · ' + (f.id || '');
   else detail = f.base || '';
   if (detail) sub.appendChild(document.createTextNode(' ' + detail));
   main.append(kr, sub);
+
+  // 인라인 라벨 편집: 제목 클릭 또는 ✎ 버튼 → 입력칸으로 전환.
+  const startLabelEdit = () => {
+    if (main.querySelector('.fav-label-input')) return;
+    const input = document.createElement('input');
+    input.className = 'fav-label-input';
+    input.type = 'text';
+    input.maxLength = 60;
+    input.value = f.label || '';
+    input.placeholder = '라벨(메모) 입력…';
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      if (save) {
+        try {
+          favorites = await window.api.favorites.setLabel(f.key, input.value);
+        } catch (e) {
+          /* noop */
+        }
+      }
+      if (!currentQuery) renderFavorites();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    kr.replaceWith(input);
+    input.focus();
+    input.select();
+  };
+  kr.title = '클릭하여 라벨(메모) 편집';
+  kr.addEventListener('click', startLabelEdit);
 
   const val = document.createElement('div');
   val.className = 'row-value';
@@ -313,6 +349,13 @@ function favRow(f) {
     }
     if (!currentQuery) renderFavorites();
   });
+  // 라벨(메모) 편집 버튼 — 어떤 즐겨찾기인지 구분용.
+  const lb = document.createElement('button');
+  lb.className = 'fav-btn';
+  lb.type = 'button';
+  lb.textContent = '✎';
+  lb.title = '라벨(메모) 편집';
+  lb.addEventListener('click', startLabelEdit);
   // 거래 URL 즐겨찾기는 "웹에서 보기" 버튼으로 원본 검색 페이지를 연다.
   if (f.kind === 'url' && f.url) {
     const ob = document.createElement('button');
@@ -321,9 +364,9 @@ function favRow(f) {
     ob.textContent = '↗';
     ob.title = '웹에서 보기';
     ob.addEventListener('click', () => window.api.openTradeUrl(f.url));
-    actions.append(ob, rb, xb);
+    actions.append(ob, lb, rb, xb);
   } else {
-    actions.append(rb, xb);
+    actions.append(lb, rb, xb);
   }
 
   row.append(icon, main, val, actions);

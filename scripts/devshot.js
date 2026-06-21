@@ -86,9 +86,15 @@ async function runScreenshots(app, win, store, overlay, pricer, outDir) {
     win.webContents.send('app:favorites', [
       {
         key: 'url:poe.kakaogames.com|8rVmKDRnFV', kind: 'url', kr: 'Runes of Aldur', labelKr: '거래 URL',
-        id: '8rVmKDRnFV', base: '8rVmKDRnFV',
+        id: '8rVmKDRnFV', base: '8rVmKDRnFV', label: '내 에너지보호막 부츠 검색',
         url: 'https://poe.kakaogames.com/trade2/search/poe2/Runes%20of%20Aldur/8rVmKDRnFV',
         lastPrice: { divine: 2700, exalted: null, altAmount: null, altCurrency: null, listingCount: 1 },
+      },
+      {
+        key: 'url:poe.kakaogames.com|abc123', kind: 'url', kr: 'Runes of Aldur', labelKr: '거래 URL',
+        id: 'abc123', base: 'abc123',
+        url: 'https://poe.kakaogames.com/trade2/search/poe2/Runes%20of%20Aldur/abc123',
+        lastPrice: { divine: null, exalted: 12, altAmount: null, altCurrency: null, listingCount: 100 },
       },
     ]);
     await delay(500);

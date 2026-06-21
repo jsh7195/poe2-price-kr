@@ -376,6 +376,23 @@ body {
 .fav-refresh-all:hover { background: var(--surface-hover); border-color: var(--gold); color: var(--gold-bright); }
 .fav-refresh-all:disabled { opacity: 0.5; cursor: default; }
 
+.fav-row .row-kr { cursor: text; }
+.fav-row .row-kr:hover { color: var(--gold-bright); }
+.fav-label-input {
+  width: 100%;
+  max-width: 320px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  padding: 3px 8px;
+  user-select: text;
+}
+.fav-label-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(200, 169, 78, 0.2); }
+
 .fav-actions { display: flex; gap: 5px; align-items: center; }
 .fav-btn {
   font: inherit; font-size: 13px; color: var(--muted);

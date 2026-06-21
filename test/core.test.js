@@ -749,6 +749,28 @@ test('favorites: addRare 추가/중복방지/삭제 + 디스크 영속', async (
   assert.ok(events >= 1); // 변경 시 이벤트 방출
 });
 
+test('favorites: setFavoriteLabel 라벨 설정/해제(+길이 제한)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'favlabel-'));
+  const store = new Store(dir);
+  await store.addRareFavorite({ name: '고통 혁대', base: '넓은 허리띠', filters: [{ id: 'explicit.stat_x', min: 10 }], mods: [] });
+  const key = (await store.getFavorites())[0].key;
+  // 라벨 설정
+  let list = await store.setFavoriteLabel(key, '  내 메인 벨트  ');
+  assert.equal(list[0].label, '내 메인 벨트'); // trim 적용
+  // 디스크 영속
+  assert.equal((await new Store(dir).getFavorites())[0].label, '내 메인 벨트');
+  // 길이 제한(60)
+  list = await store.setFavoriteLabel(key, 'x'.repeat(100));
+  assert.equal(list[0].label.length, 60);
+  // 빈 문자열 → 라벨 제거
+  list = await store.setFavoriteLabel(key, '   ');
+  assert.equal(list[0].label, undefined);
+  // 없는 키는 무변경
+  const before = await store.getFavorites();
+  const after = await store.setFavoriteLabel('nope', 'x');
+  assert.equal(after.length, before.length);
+});
+
 // ---------- catalog record ----------
 test('toRecord: 사전에 없으면 영문 폴백', () => {
   const cat = { key: 'currency', labelKr: '화폐', endpoint: 'exchange' };
