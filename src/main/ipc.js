@@ -129,6 +129,16 @@ function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('favorites:reprice', (_evt, key) => store.repriceFavorite(key));
   ipcMain.handle('favorites:addUrl', (_evt, url) => store.addUrlFavorite(typeof url === 'string' ? url : ''));
   ipcMain.handle('favorites:setLabel', (_evt, key, label) => store.setFavoriteLabel(key, typeof label === 'string' ? label : ''));
+  // "은신처로 이동" — 현재 최저가 매물의 거래 귓속말을 클립보드에 복사(게임 채팅에 붙여넣기).
+  ipcMain.handle('favorites:whisper', async (_evt, key) => {
+    try {
+      const res = await store.getFavoriteWhisper(key);
+      if (res && res.ok && res.whisper) clipboard.writeText(res.whisper);
+      return res;
+    } catch (e) {
+      return { ok: false, reason: 'error' };
+    }
+  });
 
   // 오버레이 동작 테스트: 커서 옆에 샘플 시세 툴팁을 띄운다(F9 경로와 무관하게 표시 확인).
   ipcMain.handle('overlay:test', async () => {

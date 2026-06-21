@@ -166,11 +166,15 @@ function cheapestFromRows(rows, total) {
   }
   if (!priced.length) return null;
   const c = priced[0];
+  // 최저가 매물의 귓속말(거래 메시지) + 판매 캐릭터 — "은신처로 이동"(귓속말 복사)용.
+  const top = rows[0] && rows[0].listing;
   const out = {
     divine: null, exalted: null, altAmount: null, altCurrency: null,
     listingCount: typeof total === 'number' ? total : priced.length,
     sampled: priced.length,
     low: priced.slice(0, 6),
+    whisper: top && typeof top.whisper === 'string' ? top.whisper : null,
+    seller: top && top.account ? top.account.lastCharacterName || top.account.name || null : null,
   };
   if (c.currency === 'divine') out.divine = c.amount;
   else if (c.currency === 'exalted' || c.currency === 'exalt') out.exalted = c.amount;

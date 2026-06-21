@@ -349,6 +349,31 @@ function favRow(f) {
     }
     if (!currentQuery) renderFavorites();
   });
+  // "은신처로 이동" — 현재 최저가 매물의 거래 귓속말을 복사(게임 채팅에 붙여넣기).
+  const hb = document.createElement('button');
+  hb.className = 'fav-btn';
+  hb.type = 'button';
+  hb.textContent = '🏠';
+  hb.title = '은신처로 이동(최저가 판매자 귓속말 복사)';
+  hb.addEventListener('click', async () => {
+    hb.disabled = true;
+    const prev = hb.textContent;
+    hb.textContent = '…';
+    let res;
+    try {
+      res = await window.api.favorites.whisper(f.key);
+    } catch (e) {
+      res = { ok: false, reason: 'error' };
+    }
+    if (res && res.ok) {
+      hb.textContent = '✓';
+      hb.title = '귓속말 복사됨' + (res.seller ? ' — ' + res.seller : '') + ' · 게임 채팅(Enter)에 붙여넣기';
+    } else {
+      hb.textContent = '✕';
+      hb.title = WHISPER_ERR[res && res.reason] || '복사 실패';
+    }
+    setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = '은신처로 이동(최저가 판매자 귓속말 복사)'; }, 2600);
+  });
   // 라벨(메모) 편집 버튼 — 어떤 즐겨찾기인지 구분용.
   const lb = document.createElement('button');
   lb.className = 'fav-btn';
@@ -364,9 +389,9 @@ function favRow(f) {
     ob.textContent = '↗';
     ob.title = '웹에서 보기';
     ob.addEventListener('click', () => window.api.openTradeUrl(f.url));
-    actions.append(ob, lb, rb, xb);
+    actions.append(hb, ob, lb, rb, xb);
   } else {
-    actions.append(lb, rb, xb);
+    actions.append(hb, lb, rb, xb);
   }
 
   row.append(icon, main, val, actions);
@@ -532,6 +557,12 @@ function onInput() {
 const URL_ADD_ERR = {
   invalid: '유효한 PoE2 거래 URL이 아닙니다 (poe.kakaogames.com · pathofexile.com).',
   duplicate: '이미 추가된 URL입니다.',
+};
+const WHISPER_ERR = {
+  no_listing: '현재 매물 없음 — 귓속말 불가',
+  rate_limited: '조회 한도 — 잠시 후 다시',
+  error: '복사 실패',
+  not_found: '복사 실패',
 };
 async function submitUrl() {
   const url = el.urlAddInput.value.trim();

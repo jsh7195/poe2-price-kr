@@ -491,6 +491,21 @@ class Store extends EventEmitter {
     return this._saveFavorites(list.map((f) => (f.key === key ? { ...f, label: clean || undefined } : f)));
   }
 
+  /** 즐겨찾기 종류별 현재 시세 조회(최저가 매물). 갱신·귓속말 양쪽이 공유. */
+  async _favoritePrice(fav) {
+    if (!fav) return null;
+    if (fav.kind === 'catalog') return this._priceRecord(fav.rec);
+    if (fav.kind === 'url') {
+      const parsed = ggg.parseTradeUrl(fav.url);
+      return parsed ? ggg.fetchSavedSearch(parsed) : null;
+    }
+    const filters = (fav.filters || []).map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
+    return ggg.priceByStatFilters(this.selectedLeague, filters, {
+      category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined, sockets: fav.sockets || undefined,
+      name: fav.uniqueName || undefined, rarity: fav.rarity || undefined,
+    });
+  }
+
   /** 즐겨찾기 한 건의 시세를 다시 조회해 갱신. */
   async repriceFavorite(key) {
     const list = await this.getFavorites();
@@ -498,18 +513,7 @@ class Store extends EventEmitter {
     if (!fav) return list;
     let price = null;
     try {
-      if (fav.kind === 'catalog') {
-        price = await this._priceRecord(fav.rec);
-      } else if (fav.kind === 'url') {
-        const parsed = ggg.parseTradeUrl(fav.url);
-        price = parsed ? await ggg.fetchSavedSearch(parsed) : null;
-      } else {
-        const filters = (fav.filters || []).map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
-        price = await ggg.priceByStatFilters(this.selectedLeague, filters, {
-          category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined, sockets: fav.sockets || undefined,
-          name: fav.uniqueName || undefined, rarity: fav.rarity || undefined,
-        });
-      }
+      price = await this._favoritePrice(fav);
     } catch (e) {
       /* 실패 → 기존 값 유지 */
     }
@@ -518,6 +522,26 @@ class Store extends EventEmitter {
     if (snap) lastPrice = snap;
     else if (price && price.empty) lastPrice = { empty: true };
     return this._saveFavorites(list.map((f) => (f.key === key ? { ...f, lastPrice } : f)));
+  }
+
+  /**
+   * 즐겨찾기의 현재 최저가 매물 "귓속말"(거래 메시지)을 구한다 — "은신처로 이동"용.
+   * 최저가 매물은 수시로 바뀌므로 항상 새로 조회한다(캐시 스냅샷엔 귓속말을 저장하지 않음).
+   * @returns {Promise<{ok:boolean, whisper?:string, seller?:string, reason?:string}>}
+   */
+  async getFavoriteWhisper(key) {
+    const list = await this.getFavorites();
+    const fav = list.find((f) => f.key === key);
+    if (!fav) return { ok: false, reason: 'not_found' };
+    let price = null;
+    try {
+      price = await this._favoritePrice(fav);
+    } catch (e) {
+      return { ok: false, reason: 'error' };
+    }
+    if (price && price.rateLimited) return { ok: false, reason: 'rate_limited' };
+    if (!price || price.empty || !price.whisper) return { ok: false, reason: 'no_listing' };
+    return { ok: true, whisper: price.whisper, seller: price.seller || null };
   }
 
   /**
