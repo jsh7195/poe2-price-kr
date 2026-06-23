@@ -135,8 +135,11 @@ class TradeSession {
     }
     this.log(`[travel] host=${host} league=${league} → ${JSON.stringify(result)}`);
 
-    if (result && result.reason === 'login_needed') {
-      this.showLogin(host, landing); // 로그인 창 표시 → 사용자가 로그인 후 다시 시도
+    // 토큰 없음 = 미인증(검색/조회는 비로그인도 되지만 whisper_token 은 로그인해야 생김) →
+    // 401 이 안 떠도 로그인이 필요한 상태이므로 login_needed 로 통일하고 로그인 창을 띄운다.
+    if (result && (result.reason === 'login_needed' || result.reason === 'no_token')) {
+      this.showLogin(host, landing);
+      return { ...result, reason: 'login_needed' };
     }
     return result || { ok: false, reason: 'error' };
   }

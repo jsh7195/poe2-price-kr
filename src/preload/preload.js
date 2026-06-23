@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('api', {
     login: (key) => ipcRenderer.invoke('favorites:login', key),
   },
   openTradeUrl: (url) => ipcRenderer.invoke('app:openTradeUrl', url),
+  tradeLogin: () => ipcRenderer.invoke('trade:login'),
   onTradeLoggedIn: (callback) => {
     const listener = () => callback();
     ipcRenderer.on('trade:loggedin', listener);

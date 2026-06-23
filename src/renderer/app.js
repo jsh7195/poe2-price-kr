@@ -36,6 +36,7 @@ let lastLeaguesKey = '';
 let currentQuery = '';
 let lastStatus = null; // 신고 버튼이 참조할 최근 상태(메시지·카테고리 오류)
 let favorites = []; // 즐겨찾기(메인창 워치리스트)
+let tradeLoggedIn = false; // 거래소 로그인 감지 여부(은신처 이동용)
 
 // ---------- 포맷 유틸 ----------
 function fmtNum(n) {
@@ -416,6 +417,13 @@ function renderFavorites() {
   const title = document.createElement('span');
   title.className = 'fav-title';
   title.textContent = '⭐ 즐겨찾기 ' + favorites.length;
+  // 거래소 로그인 버튼 — "은신처로 이동(🏠)"은 로그인이 있어야 동작하므로 눈에 보이게.
+  const loginBtn = document.createElement('button');
+  loginBtn.className = 'fav-refresh-all';
+  loginBtn.type = 'button';
+  loginBtn.textContent = tradeLoggedIn ? '🔑 거래소 로그인됨 ✓' : '🔑 거래소 로그인';
+  loginBtn.title = '은신처로 이동(🏠)을 쓰려면 카카오 계정으로 한 번 로그인하세요';
+  loginBtn.addEventListener('click', () => { window.api.tradeLogin(); });
   const refreshAll = document.createElement('button');
   refreshAll.className = 'fav-refresh-all';
   refreshAll.type = 'button';
@@ -432,7 +440,10 @@ function renderFavorites() {
     refreshAll.disabled = false;
     if (!currentQuery) renderFavorites();
   });
-  head.append(title, refreshAll);
+  const headActions = document.createElement('span');
+  headActions.className = 'fav-head-actions';
+  headActions.append(loginBtn, refreshAll);
+  head.append(title, headActions);
   el.results.appendChild(head);
   const frag = document.createDocumentFragment();
   for (const f of favorites) frag.appendChild(favRow(f));
@@ -793,8 +804,10 @@ window.api.favorites.list().then((list) => {
 
 // ---------- 거래소 로그인 완료 알림 ----------
 window.api.onTradeLoggedIn(() => {
+  tradeLoggedIn = true;
   el.statusMsg.className = 'status-msg';
   el.statusMsg.textContent = '✓ 거래소 로그인 완료 — 이제 🏠 (은신처로 이동)이 동작합니다.';
+  if (!currentQuery) renderFavorites(); // 로그인 버튼 라벨 갱신
 });
 
 // ---------- 시작 ----------

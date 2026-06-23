@@ -368,6 +368,7 @@ body {
   padding: 4px 4px 10px;
 }
 .fav-title { font-size: 14px; font-weight: 700; color: var(--gold-bright); letter-spacing: 0.02em; }
+.fav-head-actions { display: inline-flex; gap: 8px; align-items: center; }
 .fav-refresh-all {
   font: inherit; font-size: 11.5px; color: var(--text-dim);
   background: var(--chip-bg); border: 1px solid var(--border); border-radius: 7px;

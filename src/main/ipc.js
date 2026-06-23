@@ -141,6 +141,18 @@ function registerIpc(store, overlay, pricer, hotkeys, trade) {
       return { ok: false, reason: 'error' };
     }
   });
+  // 거래소 로그인 창 열기(눈에 보이는 버튼용 — 기본 한국 서버).
+  ipcMain.handle('trade:login', async () => {
+    try {
+      if (!trade) return { ok: false };
+      const host = 'poe.kakaogames.com';
+      const league = store.selectedLeague || 'Standard';
+      trade.showLogin(host, `https://${host}/trade2/search/poe2/${encodeURIComponent(league)}`);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false };
+    }
+  });
   // 거래소 로그인 창 수동 열기.
   ipcMain.handle('favorites:login', async (_evt, key) => {
     try {
