@@ -349,10 +349,8 @@ function favRow(f) {
     }
     if (!currentQuery) renderFavorites();
   });
-  // "은신처로 이동" — 앱 내장 창은 Cloudflare 봇 차단으로 로그인이 막힌다(실측).
-  // 그래서 이 검색을 사용자의 기본 브라우저(이미 로그인·통과됨)로 열어, 거기서
-  // 사이트의 "은신처로 이동" 버튼을 누르게 한다(웹에서 하던 그대로).
-  const HB_TITLE = '브라우저에서 열기 → 매물의 "은신처로 이동" 클릭';
+  // "은신처로 이동" — 저장된 거래소 쿠키로 인증해 게임 클라이언트를 최저가 매물로 이동.
+  const HB_TITLE = '은신처로 이동(최저가 매물 — ⚙ 설정에 거래소 쿠키 필요)';
   const hb = document.createElement('button');
   hb.className = 'fav-btn';
   hb.type = 'button';
@@ -371,14 +369,14 @@ function favRow(f) {
     if (res && res.ok) {
       hb.textContent = '✓';
       el.statusMsg.className = 'status-msg';
-      el.statusMsg.textContent = '브라우저에서 검색을 열었습니다 — 매물의 "은신처로 이동" 버튼을 누르세요.';
+      el.statusMsg.textContent = '✓ 은신처로 이동 — 게임 화면을 확인하세요.';
     } else {
       hb.textContent = '✕';
-      hb.title = TRAVEL_ERR[res && res.reason] || '열기 실패';
+      hb.title = TRAVEL_ERR[res && res.reason] || '이동 실패';
       el.statusMsg.className = 'status-msg warn';
-      el.statusMsg.textContent = TRAVEL_ERR[res && res.reason] || '열기 실패';
+      el.statusMsg.textContent = TRAVEL_ERR[res && res.reason] || '은신처 이동 실패';
     }
-    setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = HB_TITLE; }, 2600);
+    setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = HB_TITLE; }, 2800);
   });
   // 라벨(메모) 편집 버튼 — 어떤 즐겨찾기인지 구분용.
   const lb = document.createElement('button');
@@ -565,8 +563,12 @@ const URL_ADD_ERR = {
   duplicate: '이미 추가된 URL입니다.',
 };
 const TRAVEL_ERR = {
-  unsupported: '이 즐겨찾기는 거래소 링크가 없어 열 수 없습니다',
-  error: '열기 실패 — 잠시 후 다시',
+  no_cookie: '거래소 쿠키 미설정 — ⚙ 설정에서 쿠키를 붙여넣으세요 (또는 ↗ 로 브라우저에서)',
+  auth: '쿠키 만료/무효 — ⚙ 설정에서 다시 붙여넣으세요',
+  no_listing: '매물 없음(팔렸거나 조건에 맞는 매물 없음)',
+  rate_limited: '조회 한도 — 30초 후 다시',
+  unsupported: '이동을 지원하지 않는 항목',
+  error: '이동 실패 — 잠시 후 다시',
 };
 async function submitUrl() {
   const url = el.urlAddInput.value.trim();

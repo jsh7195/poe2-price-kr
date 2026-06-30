@@ -19,9 +19,12 @@ contextBridge.exposeInMainWorld('api', {
     reprice: (key) => ipcRenderer.invoke('favorites:reprice', key),
     setLabel: (key, label) => ipcRenderer.invoke('favorites:setLabel', key, label),
     travel: (key) => ipcRenderer.invoke('favorites:travel', key),
+    openWeb: (key) => ipcRenderer.invoke('favorites:openWeb', key),
     login: (key) => ipcRenderer.invoke('favorites:login', key),
   },
   openTradeUrl: (url) => ipcRenderer.invoke('app:openTradeUrl', url),
+  tradeSetCookie: (cookie) => ipcRenderer.invoke('trade:setCookie', cookie),
+  tradeCookieStatus: () => ipcRenderer.invoke('trade:cookieStatus'),
   /** 즐겨찾기 변경 구독(인게임에서 담아도 반영). 해제 함수 반환. */
   onFavorites: (callback) => {
     const listener = (_evt, list) => callback(list);

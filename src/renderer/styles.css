@@ -553,6 +553,25 @@ body {
   animation: pulse 1s var(--ease) infinite;
 }
 
+/* 은신처 이동 쿠키 섹션 */
+.tc-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.tc-head { font-size: 13px; font-weight: 600; color: var(--text); }
+.tc-status { font-size: 11.5px; font-weight: 600; color: var(--muted-2); margin-left: 6px; }
+.tc-status.on { color: var(--pos); }
+.tc-help { margin: 6px 0 8px; font-size: 11.5px; color: var(--muted); line-height: 1.55; }
+.tc-help strong { color: var(--gold); }
+.tc-input {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  font-family: "Segoe UI", monospace; font-size: 11px;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  color: var(--text); padding: 7px 9px; user-select: text;
+}
+.tc-input:focus { outline: none; border-color: var(--gold); }
+.tc-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.tc-msg { font-size: 11.5px; color: var(--muted); }
+.tc-msg.ok { color: var(--pos); }
+.tc-msg.error { color: var(--neg); }
+
 .settings-msg { min-height: 18px; margin: 12px 2px 2px; font-size: 12.5px; color: var(--muted); }
 .settings-msg.error { color: var(--neg); }
 .settings-msg.warn { color: var(--gold); }

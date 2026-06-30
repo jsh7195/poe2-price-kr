@@ -16,6 +16,12 @@ const sEl = {
     scan: document.getElementById('kbd-scan'),
     pricer: document.getElementById('kbd-pricer'),
   },
+  // 은신처 이동 쿠키
+  tcInput: document.getElementById('tc-input'),
+  tcSave: document.getElementById('tc-save'),
+  tcClear: document.getElementById('tc-clear'),
+  tcStatus: document.getElementById('tc-status'),
+  tcMsg: document.getElementById('tc-msg'),
 };
 
 const ACTIONS = ['price', 'scan', 'pricer'];
@@ -82,7 +88,20 @@ async function openModal() {
     pending = { price: '', scan: '', pricer: '' };
   }
   syncCaptureLabels();
+  refreshCookieStatus();
+  sEl.tcInput.value = '';
+  sEl.tcMsg.textContent = '';
   sEl.modal.classList.remove('hidden');
+}
+
+async function refreshCookieStatus() {
+  let set = false;
+  try {
+    const s = await window.api.tradeCookieStatus();
+    set = !!(s && s.set);
+  } catch (e) { /* noop */ }
+  sEl.tcStatus.textContent = set ? '설정됨 ✓' : '미설정';
+  sEl.tcStatus.className = 'tc-status' + (set ? ' on' : '');
 }
 
 function closeModal() {
@@ -217,6 +236,31 @@ sEl.modal.addEventListener('click', (e) => { if (e.target === sEl.modal) closeMo
 for (const btn of sEl.captures) {
   btn.addEventListener('click', () => startCapture(btn.dataset.action));
 }
+
+// 은신처 이동 쿠키 저장/지우기
+sEl.tcSave.addEventListener('click', async () => {
+  const v = sEl.tcInput.value.trim();
+  if (!v) { sEl.tcMsg.textContent = '붙여넣은 쿠키가 없습니다.'; sEl.tcMsg.className = 'tc-msg error'; return; }
+  sEl.tcSave.disabled = true;
+  try {
+    const r = await window.api.tradeSetCookie(v);
+    sEl.tcMsg.textContent = r && r.set ? '저장됨 — 이제 🏠 은신처 이동이 됩니다.' : '저장 실패';
+    sEl.tcMsg.className = 'tc-msg' + (r && r.set ? ' ok' : ' error');
+    sEl.tcInput.value = '';
+  } catch (e) {
+    sEl.tcMsg.textContent = '저장 실패';
+    sEl.tcMsg.className = 'tc-msg error';
+  }
+  sEl.tcSave.disabled = false;
+  refreshCookieStatus();
+});
+sEl.tcClear.addEventListener('click', async () => {
+  try { await window.api.tradeSetCookie(''); } catch (e) { /* noop */ }
+  sEl.tcInput.value = '';
+  sEl.tcMsg.textContent = '쿠키를 지웠습니다.';
+  sEl.tcMsg.className = 'tc-msg';
+  refreshCookieStatus();
+});
 
 // 시작 시 메인 힌트의 단축키 표기를 실제 설정값으로 맞춘다.
 window.api.settings.getHotkeys().then((res) => {

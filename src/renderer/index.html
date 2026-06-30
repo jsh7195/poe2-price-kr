@@ -123,6 +123,22 @@
           </div>
         </div>
         <p id="settings-msg" class="settings-msg"></p>
+
+        <div class="tc-section">
+          <div class="tc-head">🏠 은신처로 이동 — 거래소 로그인 쿠키 <span id="tc-status" class="tc-status"></span></div>
+          <p class="tc-help">
+            브라우저에서 <strong>poe.kakaogames.com</strong> 로그인 → <kbd>F12</kbd> → <strong>Network</strong> 탭 →
+            아무 요청이나 클릭 → <strong>Request Headers</strong>의 <strong>Cookie</strong> 값을 통째로 복사해 아래에 붙여넣으세요.
+            앱이 이 쿠키로 은신처 이동을 호출합니다. (쿠키는 PC 로컬에만 저장, 외부 전송·로그 없음)
+          </p>
+          <textarea id="tc-input" class="tc-input" rows="2" placeholder="Cookie 헤더 값 붙여넣기 (예: cf_clearance=...; POESESSID=...; ...)" spellcheck="false"></textarea>
+          <div class="tc-actions">
+            <button id="tc-save" class="btn" type="button">쿠키 저장</button>
+            <button id="tc-clear" class="btn" type="button">지우기</button>
+            <span id="tc-msg" class="tc-msg"></span>
+          </div>
+        </div>
+
         <div class="modal-actions">
           <button id="settings-reset" class="btn" type="button">기본값 복원</button>
           <span class="modal-spacer"></span>

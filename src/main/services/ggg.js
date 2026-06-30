@@ -406,6 +406,46 @@ const TRADE_REALMS = Object.freeze({
   'pathofexile.com': 'https://www.pathofexile.com/api/trade2',
 });
 
+// 은신처 이동 API 호출용 UA(거래 사이트가 막지 않는 일반 브라우저로 위장). 세션 쿠키로 인증한다.
+const TRAVEL_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+/**
+ * "은신처로 이동" — 사용자의 거래소 로그인 쿠키로 인증해 최저가 매물로 게임 이동.
+ * 흐름: (저장검색 GET 또는 검색바디) → 가격오름차순 재검색 → 최저가 매물 fetch(whisper_token) →
+ *        POST /whisper {token}. trade2 API 는 Cloudflare 미차단이라 세션 쿠키만 있으면 동작.
+ * @param {{apiBase:string, league:string, savedId?:string, searchBody?:object, cookie:string}} p
+ * @returns {Promise<{ok:boolean, reason?:string}>} reason: no_cookie|auth|no_listing|rate_limited|error
+ */
+async function travelHideout({ apiBase, league, savedId, searchBody, cookie }) {
+  if (!apiBase || !league) return { ok: false, reason: 'error' };
+  if (!cookie) return { ok: false, reason: 'no_cookie' };
+  const lg = encodeURIComponent(league);
+  const req = { timeoutMs: 9000, retries: 0, cookie, userAgent: TRAVEL_UA };
+  try {
+    let query = searchBody;
+    if (!query && savedId) {
+      const gj = await getJson(`${apiBase}/search/${lg}/${encodeURIComponent(savedId)}`, req);
+      query = gj && gj.query;
+    }
+    if (!query) return { ok: false, reason: 'error' };
+    const sj = await postJson(`${apiBase}/search/${lg}`, { query, sort: { price: 'asc' } }, req);
+    if (!sj || !Array.isArray(sj.result) || !sj.result.length) return { ok: false, reason: 'no_listing' };
+    const ids = sj.result.slice(0, 1).join(',');
+    const fj = await getJson(`${apiBase}/fetch/${ids}?query=${sj.id}`, req);
+    const L = fj && fj.result && fj.result[0] && fj.result[0].listing;
+    const token = L && L.whisper_token;
+    // 매물은 있는데 토큰이 없다 = 인증 안 됨(미로그인 fetch 엔 whisper_token 없음) → 쿠키 재설정 유도.
+    if (!token) return { ok: false, reason: L ? 'auth' : 'no_listing' };
+    await postJson(`${apiBase}/whisper`, { token }, req); // 성공 시 게임 클라이언트가 은신처로 이동
+    return { ok: true };
+  } catch (e) {
+    if (e && e.status === 401) return { ok: false, reason: 'auth' }; // 쿠키 만료/무효
+    if (e && e.status === 429) return { ok: false, reason: 'rate_limited' };
+    return { ok: false, reason: 'error' };
+  }
+}
+
 /**
  * 거래 검색 URL(사용자가 붙여넣음)을 안전하게 파싱.
  *   https://poe.kakaogames.com/trade2/search/poe2/{league}/{id}
@@ -611,5 +651,6 @@ module.exports = {
   tradeUrl,
   parseTradeUrl,
   fetchSavedSearch,
+  travelHideout,
   affixRank,
 };

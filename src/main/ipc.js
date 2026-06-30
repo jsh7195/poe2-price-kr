@@ -129,18 +129,39 @@ function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('favorites:reprice', (_evt, key) => store.repriceFavorite(key));
   ipcMain.handle('favorites:addUrl', (_evt, url) => store.addUrlFavorite(typeof url === 'string' ? url : ''));
   ipcMain.handle('favorites:setLabel', (_evt, key, label) => store.setFavoriteLabel(key, typeof label === 'string' ? label : ''));
-  // "은신처로 이동" — Cloudflare 봇 차단으로 앱 내장 창은 로그인이 막힌다(실측 확인).
-  // 그래서 사용자의 기본 브라우저(이미 로그인·Cloudflare 통과됨)로 해당 검색을 열어,
-  // 거기서 사이트의 "은신처로 이동" 버튼을 누르게 한다 — 웹에서 하던 그대로.
+  // "은신처로 이동" — 저장된 거래소 로그인 쿠키로 인증해 게임 클라이언트를 최저가 매물로 이동.
+  // (trade2 API 는 Cloudflare 미차단 → 세션 쿠키만 있으면 동작. 쿠키 없으면 no_cookie.)
   ipcMain.handle('favorites:travel', async (_evt, key) => {
     try {
-      const url = await store.getTravelUrl(key);
-      if (!url) return { ok: false, reason: 'unsupported' };
-      if (!TRADE_URL_RE.test(url)) return { ok: false, reason: 'error' };
-      await shell.openExternal(url);
-      return { ok: true, external: true };
+      return await store.travelFavorite(key);
     } catch (e) {
       return { ok: false, reason: 'error' };
+    }
+  });
+  // 쿠키 없거나 만료 시 대체 경로: 브라우저로 검색 열기(사이트의 은신처 버튼 직접 클릭).
+  ipcMain.handle('favorites:openWeb', async (_evt, key) => {
+    try {
+      const url = await store.getTravelUrl(key);
+      if (!url || !TRADE_URL_RE.test(url)) return { ok: false };
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false };
+    }
+  });
+  // 거래소 로그인 쿠키 설정/상태(은신처 이동용). 쿠키 값 자체는 절대 반환·로그하지 않는다.
+  ipcMain.handle('trade:setCookie', async (_evt, cookie) => {
+    try {
+      return await store.setTradeCookie(typeof cookie === 'string' ? cookie : '');
+    } catch (e) {
+      return { ok: false };
+    }
+  });
+  ipcMain.handle('trade:cookieStatus', async () => {
+    try {
+      return { set: !!(await store.getTradeCookie()) };
+    } catch (e) {
+      return { set: false };
     }
   });
 

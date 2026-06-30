@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * JSON GET. 실패 시 HTTP.retries 만큼 재시도.
  * @returns {Promise<any>} 파싱된 JSON
  */
-async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect } = {}) {
+async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect, cookie, userAgent } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
@@ -25,9 +25,10 @@ async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries
         // redirect:'error' = 신뢰 호스트가 예기치 않게 3xx 로 리다이렉트하면 따라가지 않고 실패(SSRF 방어).
         ...(redirect ? { redirect } : {}),
         headers: {
-          'User-Agent': USER_AGENT,
+          'User-Agent': userAgent || USER_AGENT,
           Accept: 'application/json',
           'Accept-Language': 'ko,en;q=0.8',
+          ...(cookie ? { Cookie: cookie } : {}), // 사용자가 붙여넣은 거래소 로그인 쿠키(은신처 이동용)
         },
       });
       if (!res.ok) {
@@ -55,7 +56,7 @@ async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries
  * 429(레이트리밋)는 Retry-After 헤더만큼 대기 후 재시도한다.
  * @returns {Promise<any>} 파싱된 JSON
  */
-async function postJson(url, body, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect } = {}) {
+async function postJson(url, body, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect, cookie, userAgent } = {}) {
   const payload = JSON.stringify(body || {});
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -67,10 +68,12 @@ async function postJson(url, body, { timeoutMs = HTTP.timeoutMs, retries = HTTP.
         signal: controller.signal,
         ...(redirect ? { redirect } : {}), // 신뢰 호스트의 예기치 않은 리다이렉트 차단(SSRF 방어)
         headers: {
-          'User-Agent': USER_AGENT,
+          'User-Agent': userAgent || USER_AGENT,
           Accept: 'application/json',
           'Accept-Language': 'ko,en;q=0.8',
           'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          ...(cookie ? { Cookie: cookie } : {}),
         },
         body: payload,
       });

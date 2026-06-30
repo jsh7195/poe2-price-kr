@@ -525,17 +525,14 @@ class Store extends EventEmitter {
   }
 
   /**
-   * "은신처로 이동" 용 거래소 검색 웹 URL(브라우저로 열어 사이트의 은신처 버튼을 누르게 함).
-   *  - URL 즐겨찾기: 저장된 검색 URL 그대로.
-   *  - 레어/카탈로그: 검색을 실행해 거래소 결과 URL(searchUrl)을 얻는다.
-   * @returns {Promise<string|null>}
+   * "은신처로 이동" 용 거래소 검색 웹 URL(브라우저로 열기 — ↗ 웹에서 보기).
    */
   async getTravelUrl(key) {
     const list = await this.getFavorites();
     const fav = list.find((f) => f.key === key);
     if (!fav) return null;
     if (fav.kind === 'url') {
-      return ggg.parseTradeUrl(fav.url) ? fav.url : null; // 추가 시 검증된 URL
+      return ggg.parseTradeUrl(fav.url) ? fav.url : null;
     }
     try {
       const price = await this._favoritePrice(fav);
@@ -543,6 +540,55 @@ class Store extends EventEmitter {
     } catch (e) {
       return null;
     }
+  }
+
+  /** 즐겨찾기 → 은신처 이동 API 대상(apiBase·리그·저장검색/검색바디). */
+  _travelTarget(fav) {
+    if (!fav) return null;
+    if (fav.kind === 'url') {
+      const p = ggg.parseTradeUrl(fav.url);
+      return p ? { apiBase: p.apiBase, league: p.league, savedId: p.id } : null;
+    }
+    const league = this.selectedLeague;
+    if (!league) return null;
+    const apiBase = 'https://poe.kakaogames.com/api/trade2'; // 한국 서버
+    if (fav.kind === 'catalog') return { apiBase, league, searchBody: ggg.buildQuery(fav.rec) };
+    const filters = (fav.filters || [])
+      .filter((f) => f && f.id)
+      .map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
+    return {
+      apiBase, league,
+      searchBody: ggg.buildStatQuery(filters, {
+        category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined,
+        sockets: fav.sockets || undefined, name: fav.uniqueName || undefined, rarity: fav.rarity || undefined,
+      }),
+    };
+  }
+
+  /** 저장된 거래소 로그인 쿠키(은신처 이동용). 비어있으면 ''. */
+  async getTradeCookie() {
+    const s = await this.getSettings();
+    return s.tradeCookie || '';
+  }
+
+  /** 거래소 로그인 쿠키 저장/해제(민감정보 — 로컬에만 저장, 로그 금지). */
+  async setTradeCookie(cookie) {
+    const c = typeof cookie === 'string' ? cookie.trim().slice(0, 8000) : '';
+    await this.setSetting('tradeCookie', c || undefined);
+    return { ok: true, set: !!c };
+  }
+
+  /**
+   * 즐겨찾기의 최저가 매물로 "은신처로 이동"(저장된 쿠키로 인증해 거래 API 직접 호출).
+   * @returns {Promise<{ok:boolean, reason?:string}>}
+   */
+  async travelFavorite(key) {
+    const cookie = await this.getTradeCookie();
+    if (!cookie) return { ok: false, reason: 'no_cookie' };
+    const list = await this.getFavorites();
+    const target = this._travelTarget(list.find((f) => f.key === key));
+    if (!target) return { ok: false, reason: 'unsupported' };
+    return ggg.travelHideout({ ...target, cookie });
   }
 
   /**
