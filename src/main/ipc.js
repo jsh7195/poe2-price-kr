@@ -42,7 +42,7 @@ async function openTradeExternal(url) {
  * 렌더러 ↔ 메인 IPC 핸들러 등록.
  * 모든 핸들러는 try/catch 로 감싸 렌더러에 일관된 형태로 반환한다.
  */
-function registerIpc(store, overlay, pricer, hotkeys, trade) {
+function registerIpc(store, overlay, pricer, hotkeys) {
   ipcMain.handle('app:getStatus', () => store.status());
 
   // --- 진단 정보 복사(친구 디버깅용) ---
@@ -129,44 +129,18 @@ function registerIpc(store, overlay, pricer, hotkeys, trade) {
   ipcMain.handle('favorites:reprice', (_evt, key) => store.repriceFavorite(key));
   ipcMain.handle('favorites:addUrl', (_evt, url) => store.addUrlFavorite(typeof url === 'string' ? url : ''));
   ipcMain.handle('favorites:setLabel', (_evt, key, label) => store.setFavoriteLabel(key, typeof label === 'string' ? label : ''));
-  // "은신처로 이동" — 로그인된 거래소 세션으로 게임 클라이언트를 판매자 은신처로 이동시킨다.
-  // 미로그인이면 거래소 로그인 창을 띄우고 login_needed 를 반환(사용자가 로그인 후 다시 시도).
+  // "은신처로 이동" — Cloudflare 봇 차단으로 앱 내장 창은 로그인이 막힌다(실측 확인).
+  // 그래서 사용자의 기본 브라우저(이미 로그인·Cloudflare 통과됨)로 해당 검색을 열어,
+  // 거기서 사이트의 "은신처로 이동" 버튼을 누르게 한다 — 웹에서 하던 그대로.
   ipcMain.handle('favorites:travel', async (_evt, key) => {
     try {
-      if (!trade) return { ok: false, reason: 'error' };
-      const target = await store.resolveTravelTarget(key);
-      if (!target) return { ok: false, reason: 'unsupported' };
-      return await trade.travel(target);
+      const url = await store.getTravelUrl(key);
+      if (!url) return { ok: false, reason: 'unsupported' };
+      if (!TRADE_URL_RE.test(url)) return { ok: false, reason: 'error' };
+      await shell.openExternal(url);
+      return { ok: true, external: true };
     } catch (e) {
       return { ok: false, reason: 'error' };
-    }
-  });
-  // 거래소 로그인 창 열기(눈에 보이는 버튼용 — 기본 한국 서버).
-  ipcMain.handle('trade:login', async () => {
-    try {
-      if (!trade) return { ok: false };
-      const host = 'poe.kakaogames.com';
-      const league = store.selectedLeague || 'Standard';
-      trade.showLogin(host, `https://${host}/trade2/search/poe2/${encodeURIComponent(league)}`);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false };
-    }
-  });
-  // 거래소 로그인 창 수동 열기.
-  ipcMain.handle('favorites:login', async (_evt, key) => {
-    try {
-      if (!trade) return { ok: false };
-      const target = await store.resolveTravelTarget(key);
-      const host = (target && target.host) || 'poe.kakaogames.com';
-      const league = (target && target.league) || store.selectedLeague || '';
-      const landing = target && target.savedId
-        ? `https://${host}/trade2/search/poe2/${encodeURIComponent(league)}/${encodeURIComponent(target.savedId)}`
-        : `https://${host}/trade2`;
-      trade.showLogin(host, landing);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false };
     }
   });
 

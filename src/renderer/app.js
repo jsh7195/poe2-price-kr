@@ -36,7 +36,6 @@ let lastLeaguesKey = '';
 let currentQuery = '';
 let lastStatus = null; // 신고 버튼이 참조할 최근 상태(메시지·카테고리 오류)
 let favorites = []; // 즐겨찾기(메인창 워치리스트)
-let tradeLoggedIn = false; // 거래소 로그인 감지 여부(은신처 이동용)
 
 // ---------- 포맷 유틸 ----------
 function fmtNum(n) {
@@ -350,8 +349,10 @@ function favRow(f) {
     }
     if (!currentQuery) renderFavorites();
   });
-  // "은신처로 이동" — 로그인된 거래소 세션으로 게임 캐릭터를 최저가 판매자 은신처로 이동.
-  const HB_TITLE = '은신처로 이동(최저가 판매자에게)';
+  // "은신처로 이동" — 앱 내장 창은 Cloudflare 봇 차단으로 로그인이 막힌다(실측).
+  // 그래서 이 검색을 사용자의 기본 브라우저(이미 로그인·통과됨)로 열어, 거기서
+  // 사이트의 "은신처로 이동" 버튼을 누르게 한다(웹에서 하던 그대로).
+  const HB_TITLE = '브라우저에서 열기 → 매물의 "은신처로 이동" 클릭';
   const hb = document.createElement('button');
   hb.className = 'fav-btn';
   hb.type = 'button';
@@ -369,19 +370,15 @@ function favRow(f) {
     }
     if (res && res.ok) {
       hb.textContent = '✓';
-      hb.title = '은신처로 이동 — 게임을 확인하세요';
       el.statusMsg.className = 'status-msg';
-      el.statusMsg.textContent = '✓ 은신처로 이동 — 게임 화면을 확인하세요.';
+      el.statusMsg.textContent = '브라우저에서 검색을 열었습니다 — 매물의 "은신처로 이동" 버튼을 누르세요.';
     } else {
-      const needLogin = res && res.reason === 'login_needed';
-      hb.textContent = needLogin ? '🔑' : '✕';
-      hb.title = TRAVEL_ERR[res && res.reason] || '이동 실패';
+      hb.textContent = '✕';
+      hb.title = TRAVEL_ERR[res && res.reason] || '열기 실패';
       el.statusMsg.className = 'status-msg warn';
-      el.statusMsg.textContent = needLogin
-        ? '거래소 로그인 창이 열렸습니다 — 카카오 로그인 후 🏠 를 다시 눌러주세요.'
-        : (TRAVEL_ERR[res && res.reason] || '은신처 이동 실패');
+      el.statusMsg.textContent = TRAVEL_ERR[res && res.reason] || '열기 실패';
     }
-    setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = HB_TITLE; }, 2800);
+    setTimeout(() => { hb.textContent = prev; hb.disabled = false; hb.title = HB_TITLE; }, 2600);
   });
   // 라벨(메모) 편집 버튼 — 어떤 즐겨찾기인지 구분용.
   const lb = document.createElement('button');
@@ -416,13 +413,6 @@ function renderFavorites() {
   const title = document.createElement('span');
   title.className = 'fav-title';
   title.textContent = '⭐ 즐겨찾기 ' + favorites.length;
-  // 거래소 로그인 버튼 — "은신처로 이동(🏠)"은 로그인이 있어야 동작하므로 눈에 보이게.
-  const loginBtn = document.createElement('button');
-  loginBtn.className = 'fav-refresh-all';
-  loginBtn.type = 'button';
-  loginBtn.textContent = tradeLoggedIn ? '🔑 거래소 로그인됨 ✓' : '🔑 거래소 로그인';
-  loginBtn.title = '은신처로 이동(🏠)을 쓰려면 카카오 계정으로 한 번 로그인하세요';
-  loginBtn.addEventListener('click', () => { window.api.tradeLogin(); });
   const refreshAll = document.createElement('button');
   refreshAll.className = 'fav-refresh-all';
   refreshAll.type = 'button';
@@ -439,10 +429,7 @@ function renderFavorites() {
     refreshAll.disabled = false;
     if (!currentQuery) renderFavorites();
   });
-  const headActions = document.createElement('span');
-  headActions.className = 'fav-head-actions';
-  headActions.append(loginBtn, refreshAll);
-  head.append(title, headActions);
+  head.append(title, refreshAll);
   el.results.appendChild(head);
   const frag = document.createDocumentFragment();
   for (const f of favorites) frag.appendChild(favRow(f));
@@ -578,12 +565,8 @@ const URL_ADD_ERR = {
   duplicate: '이미 추가된 URL입니다.',
 };
 const TRAVEL_ERR = {
-  login_needed: '거래소 로그인 필요 — 열린 창에서 로그인 후 다시 🏠',
-  no_listing: '매물 없음(팔렸거나 조건에 맞는 매물 없음)',
-  no_button: '이동 버튼을 못 찾음 — 로그인 확인 또는 매물 없음(열린 창에서 직접 시도)',
-  in_progress: '이미 이동 중인 매물뿐 — 잠시 후 다시',
-  unsupported: '이동을 지원하지 않는 항목',
-  error: '이동 실패(일시 오류)',
+  unsupported: '이 즐겨찾기는 거래소 링크가 없어 열 수 없습니다',
+  error: '열기 실패 — 잠시 후 다시',
 };
 async function submitUrl() {
   const url = el.urlAddInput.value.trim();
@@ -786,14 +769,6 @@ window.api.onFavorites((list) => {
 window.api.favorites.list().then((list) => {
   favorites = list || [];
   if (!currentQuery) renderFavorites();
-});
-
-// ---------- 거래소 로그인 완료 알림 ----------
-window.api.onTradeLoggedIn(() => {
-  tradeLoggedIn = true;
-  el.statusMsg.className = 'status-msg';
-  el.statusMsg.textContent = '✓ 거래소 로그인 완료 — 이제 🏠 (은신처로 이동)이 동작합니다.';
-  if (!currentQuery) renderFavorites(); // 로그인 버튼 라벨 갱신
 });
 
 // ---------- 시작 ----------

@@ -20,7 +20,6 @@ const { Pricer } = require('./pricer');
 const { createHotkeyController } = require('./hotkey');
 const { setupUpdater } = require('./updater');
 const { isRunAsAdminSet, setRunAsAdmin } = require('./services/elevation');
-const { TradeSession } = require('./trade');
 
 const ASSET = (f) => path.join(__dirname, '..', '..', 'assets', f);
 
@@ -33,7 +32,6 @@ let store = null;
 let overlay = null;
 let pricer = null;
 let hotkeyController = null;
-let tradeSession = null;
 let tray = null;
 let isQuiting = false;
 let notifiedTray = false;
@@ -206,12 +204,7 @@ function start() {
     pricer.create();
 
     hotkeyController = createHotkeyController(store, overlay, pricer); // 설정에서 바꿀 수 있는 전역 단축키
-    tradeSession = new TradeSession(logMain); // "은신처로 이동"(로그인된 거래소 세션)
-    // 거래소 로그인 완료를 감지하면 메인 창에 알림(사용자가 다시 🏠 누르면 이동).
-    tradeSession.onLoggedIn = () => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('trade:loggedin');
-    };
-    registerIpc(store, overlay, pricer, hotkeyController, tradeSession); // settings:*, favorites:travel 등 포함
+    registerIpc(store, overlay, pricer, hotkeyController); // settings:*, favorites:* 등 포함
 
     // 트레이 모드: 설정이 켜져 있으면 창을 숨긴 채 시작
     const settings = await store.getSettings();
@@ -298,7 +291,6 @@ function start() {
 
   app.on('will-quit', () => {
     if (hotkeyController) hotkeyController.teardown();
-    if (tradeSession) tradeSession.destroy();
     if (tray) tray.destroy();
   });
 }

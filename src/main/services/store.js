@@ -19,8 +19,6 @@ const errorReport = require('./errorReport');
 const MAX_SCAN_PRICE = 8;
 // F10 오버레이에 표시할 최대 아이템 수(화폐 거래소 "모두" 탭이 ~60종). 초과분은 잘라내고 partial 표시.
 const MAX_SCAN_DISPLAY = 60;
-// 레어/카탈로그 즐겨찾기의 "은신처로 이동" 기본 거래 도메인(한국 서버 — 사용자가 KR 에서 플레이).
-const TRAVEL_HOST = 'poe.kakaogames.com';
 
 /** 카탈로그 레코드 + GGG 라이브 가격 → 표시용 레코드(불변 복사).
  *  ninja 의 value/change7d 는 표시에서 배제하고 GGG 실측가로 덮어쓴다. */
@@ -527,57 +525,24 @@ class Store extends EventEmitter {
   }
 
   /**
-   * 즐겨찾기 → "은신처로 이동" 실행 대상(거래 도메인·리그·검색조건).
-   * URL 즐겨찾기는 그 도메인/저장검색을, 레어/카탈로그는 한국 서버에서 검색바디로 이동한다.
-   * @returns {null | {host:string, league:string, savedId?:string, searchBody?:object}}
+   * "은신처로 이동" 용 거래소 검색 웹 URL(브라우저로 열어 사이트의 은신처 버튼을 누르게 함).
+   *  - URL 즐겨찾기: 저장된 검색 URL 그대로.
+   *  - 레어/카탈로그: 검색을 실행해 거래소 결과 URL(searchUrl)을 얻는다.
+   * @returns {Promise<string|null>}
    */
-  getTravelTarget(fav) {
-    if (!fav) return null;
-    if (fav.kind === 'url') {
-      const parsed = ggg.parseTradeUrl(fav.url);
-      if (!parsed) return null;
-      return { host: parsed.host, league: parsed.league, savedId: parsed.id };
-    }
-    const league = this.selectedLeague;
-    if (!league) return null;
-    if (fav.kind === 'catalog') {
-      return { host: TRAVEL_HOST, league, searchBody: ggg.buildQuery(fav.rec) };
-    }
-    // rare: 옵션 필터 + 카테고리/ilvl/소켓/이름
-    const filters = (fav.filters || [])
-      .filter((f) => f && f.id)
-      .map((f) => ({ id: f.id, value: f.min != null ? { min: Number(f.min) } : undefined }));
-    const searchBody = ggg.buildStatQuery(filters, {
-      category: fav.categoryId || undefined, ilvl: fav.ilvl || undefined,
-      sockets: fav.sockets || undefined, name: fav.uniqueName || undefined, rarity: fav.rarity || undefined,
-    });
-    return { host: TRAVEL_HOST, league, searchBody };
-  }
-
-  /** 키로 즐겨찾기를 찾아 이동 대상을 반환. */
-  async resolveTravelTarget(key) {
-    const list = await this.getFavorites();
-    return this.getTravelTarget(list.find((f) => f.key === key));
-  }
-
-  /**
-   * 즐겨찾기의 현재 최저가 매물 "귓속말"(거래 메시지)을 구한다 — "은신처로 이동"용.
-   * 최저가 매물은 수시로 바뀌므로 항상 새로 조회한다(캐시 스냅샷엔 귓속말을 저장하지 않음).
-   * @returns {Promise<{ok:boolean, whisper?:string, seller?:string, reason?:string}>}
-   */
-  async getFavoriteWhisper(key) {
+  async getTravelUrl(key) {
     const list = await this.getFavorites();
     const fav = list.find((f) => f.key === key);
-    if (!fav) return { ok: false, reason: 'not_found' };
-    let price = null;
-    try {
-      price = await this._favoritePrice(fav);
-    } catch (e) {
-      return { ok: false, reason: 'error' };
+    if (!fav) return null;
+    if (fav.kind === 'url') {
+      return ggg.parseTradeUrl(fav.url) ? fav.url : null; // 추가 시 검증된 URL
     }
-    if (price && price.rateLimited) return { ok: false, reason: 'rate_limited' };
-    if (!price || price.empty || !price.whisper) return { ok: false, reason: 'no_listing' };
-    return { ok: true, whisper: price.whisper, seller: price.seller || null };
+    try {
+      const price = await this._favoritePrice(fav);
+      return (price && price.searchUrl) || null;
+    } catch (e) {
+      return null;
+    }
   }
 
   /**
