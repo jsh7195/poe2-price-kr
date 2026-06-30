@@ -391,6 +391,21 @@ test('scanRecipe: 화면 잡텍스트 맨이름은 매칭 안 됨', async () => 
   assert.equal(res.items.length, 0);
 });
 
+// ---------- 쿠키 병합(은신처 이동 세션 자동 갱신) ----------
+const { mergeSetCookies } = require('../src/main/services/cookies');
+test('mergeSetCookies: Set-Cookie 로 저장 쿠키 갱신(POESESSID 회전)', () => {
+  // 기존 POESESSID 가 새 값으로 갱신되고, cf_clearance 등 다른 쿠키는 유지
+  const out = mergeSetCookies('cf_clearance=abc; POESESSID=old123', ['POESESSID=new999; path=/; HttpOnly; SameSite=Lax']);
+  assert.ok(/POESESSID=new999/.test(out));
+  assert.ok(/cf_clearance=abc/.test(out));
+  assert.ok(!/old123/.test(out));
+  // 새 쿠키 추가
+  assert.ok(/extra=1/.test(mergeSetCookies('a=1', ['extra=1; path=/'])));
+  // 빈 입력 안전
+  assert.equal(mergeSetCookies('a=1', []), 'a=1');
+  assert.equal(mergeSetCookies('a=1', null), 'a=1');
+});
+
 // ---------- 단축키(accelerator) 정규화·검증 ----------
 test('normalizeAccelerator: 별칭·순서·대소문자 정규화', () => {
   assert.equal(normalizeAccelerator('f9'), 'F9');

@@ -8,6 +8,7 @@ const { buildDictionary } = require('./dictionary');
 const { buildCatalog } = require('./catalog');
 const { search, scoreRecord } = require('./search');
 const { normKr, normEn, jamoSimilarity, decomposeHangul, levenshtein } = require('./normalize');
+const { mergeSetCookies } = require('./cookies');
 const { extractItemName, parseRecipeLines } = require('./itemtext');
 const { parseItem } = require('./itemparse');
 const { isElevated } = require('./elevation');
@@ -588,7 +589,13 @@ class Store extends EventEmitter {
     const list = await this.getFavorites();
     const target = this._travelTarget(list.find((f) => f.key === key));
     if (!target) return { ok: false, reason: 'unsupported' };
-    return ggg.travelHideout({ ...target, cookie });
+    const res = await ggg.travelHideout({ ...target, cookie });
+    // 성공 시 응답 Set-Cookie 로 저장 쿠키를 자동 갱신(슬라이딩 세션 → 만료 없이 계속 사용).
+    if (res && res.ok && Array.isArray(res.setCookies) && res.setCookies.length) {
+      const merged = mergeSetCookies(cookie, res.setCookies);
+      if (merged && merged !== cookie) await this.setSetting('tradeCookie', merged);
+    }
+    return { ok: !!(res && res.ok), reason: res && res.reason };
   }
 
   /**

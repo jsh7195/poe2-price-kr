@@ -421,7 +421,8 @@ async function travelHideout({ apiBase, league, savedId, searchBody, cookie }) {
   if (!apiBase || !league) return { ok: false, reason: 'error' };
   if (!cookie) return { ok: false, reason: 'no_cookie' };
   const lg = encodeURIComponent(league);
-  const req = { timeoutMs: 9000, retries: 0, cookie, userAgent: TRAVEL_UA };
+  const jar = []; // 응답 Set-Cookie 수집(슬라이딩 세션 자동 갱신용)
+  const req = { timeoutMs: 9000, retries: 0, cookie, userAgent: TRAVEL_UA, cookieJar: jar };
   try {
     let query = searchBody;
     if (!query && savedId) {
@@ -438,7 +439,7 @@ async function travelHideout({ apiBase, league, savedId, searchBody, cookie }) {
     // 매물은 있는데 토큰이 없다 = 인증 안 됨(미로그인 fetch 엔 whisper_token 없음) → 쿠키 재설정 유도.
     if (!token) return { ok: false, reason: L ? 'auth' : 'no_listing' };
     await postJson(`${apiBase}/whisper`, { token }, req); // 성공 시 게임 클라이언트가 은신처로 이동
-    return { ok: true };
+    return { ok: true, setCookies: jar }; // 호출자가 갱신 쿠키를 저장
   } catch (e) {
     if (e && e.status === 401) return { ok: false, reason: 'auth' }; // 쿠키 만료/무효
     if (e && e.status === 429) return { ok: false, reason: 'rate_limited' };

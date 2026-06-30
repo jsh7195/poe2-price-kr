@@ -14,7 +14,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * JSON GET. 실패 시 HTTP.retries 만큼 재시도.
  * @returns {Promise<any>} 파싱된 JSON
  */
-async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect, cookie, userAgent } = {}) {
+/** 응답의 Set-Cookie 원문들을 jar(배열)에 모은다(슬라이딩 세션 갱신용). */
+function collectSetCookies(res, jar) {
+  if (!Array.isArray(jar)) return;
+  try {
+    const sc =
+      typeof res.headers.getSetCookie === 'function'
+        ? res.headers.getSetCookie()
+        : res.headers.get('set-cookie')
+          ? [res.headers.get('set-cookie')]
+          : [];
+    for (const c of sc) jar.push(c);
+  } catch (e) {
+    /* noop */
+  }
+}
+
+async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect, cookie, userAgent, cookieJar } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
@@ -31,6 +47,7 @@ async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries
           ...(cookie ? { Cookie: cookie } : {}), // 사용자가 붙여넣은 거래소 로그인 쿠키(은신처 이동용)
         },
       });
+      collectSetCookies(res, cookieJar);
       if (!res.ok) {
         // 404 등 클라이언트 오류는 재시도 무의미 → 즉시 던진다.
         const err = new Error(`HTTP ${res.status} for ${url}`);
@@ -56,7 +73,7 @@ async function getJson(url, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries
  * 429(레이트리밋)는 Retry-After 헤더만큼 대기 후 재시도한다.
  * @returns {Promise<any>} 파싱된 JSON
  */
-async function postJson(url, body, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect, cookie, userAgent } = {}) {
+async function postJson(url, body, { timeoutMs = HTTP.timeoutMs, retries = HTTP.retries, redirect, cookie, userAgent, cookieJar } = {}) {
   const payload = JSON.stringify(body || {});
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -77,6 +94,7 @@ async function postJson(url, body, { timeoutMs = HTTP.timeoutMs, retries = HTTP.
         },
         body: payload,
       });
+      collectSetCookies(res, cookieJar);
       if (res.status === 429) {
         // 레이트리밋: Retry-After(초) 만큼 대기 후 재시도.
         const ra = Number(res.headers.get('retry-after')) || 5;
