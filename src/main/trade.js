@@ -90,58 +90,83 @@ class TradeSession {
   }
 
   /**
-   * 거래 창의 페이지 컨텍스트에서 "은신처로 이동" 전체 흐름을 한 번에 실행한다.
+   * 로그인된 거래 창에서 사이트의 진짜 "은신처로 이동" 버튼을 눌러 실제로 이동시킨다.
+   * (직접 API 추측 대신 사이트 자체 기능을 그대로 사용 — KR 에서 동작 확인된 방식.)
    * @param {{host:string, league:string, savedId?:string, searchBody?:object}} target
-   * @returns {Promise<{ok:boolean, reason?:string, seller?:string}>}
-   *   reason: login_needed | no_listing | no_token | rate_limited | error
+   * @returns {Promise<{ok:boolean, reason?:string}>}
+   *   reason: login_needed | no_listing | no_button | in_progress | error
    */
   async travel(target) {
     const host = canonHost(target && target.host) || DEFAULT_HOST;
     const league = target && target.league;
     if (!league) return { ok: false, reason: 'error' };
-    const landing = target.savedId
-      ? `https://${host}/trade2/search/poe2/${encodeURIComponent(league)}/${encodeURIComponent(target.savedId)}`
-      : `https://${host}/trade2`;
-    const win = this._ensureWindow(host, landing);
-
-    // 페이지 로드 완료 보장(처음 생성 직후일 수 있음).
+    const base = `https://${host}/trade2/search/poe2/${encodeURIComponent(league)}`;
+    const win = this._ensureWindow(host, base);
     await this._waitLoaded(win);
 
-    // 보안: 인증 fetch 를 실행할 페이지가 반드시 "거래 도메인"이어야 한다.
-    // (로그인 미완료면 카카오 SSO 등 다른 도메인에 있을 수 있음 → 그 컨텍스트에서 실행 금지.)
-    // 현재 URL 이 거래 도메인이 아니면 랜딩으로 되돌리고 한 번 더 기다린 뒤, 그래도 아니면 로그인 필요.
-    if (!this._isOnHost(win, host)) {
-      win.loadURL(landing).catch(() => {});
+    // 이동할 검색 결과 URL 결정: 저장검색이면 그 URL, 아니면 검색바디로 새 검색 id 생성.
+    let searchUrl = null;
+    if (target.savedId) {
+      searchUrl = base + '/' + encodeURIComponent(target.savedId);
+    } else if (target.searchBody) {
+      const id = await this._createSearch(win, host, league, target.searchBody);
+      if (id === 'login') { this.showLogin(host, base); return { ok: false, reason: 'login_needed' }; }
+      if (!id) return { ok: false, reason: 'no_listing' };
+      searchUrl = base + '/' + id;
+    } else {
+      return { ok: false, reason: 'error' };
+    }
+
+    // 검색 결과 페이지로 이동(이미 그 페이지면 생략).
+    if (this._urlNoQuery(win.webContents.getURL()) !== searchUrl) {
+      win.loadURL(searchUrl).catch(() => {});
       await this._waitLoaded(win);
-      if (!this._isOnHost(win, host)) {
-        this.showLogin(host, landing);
-        return { ok: false, reason: 'login_needed' };
-      }
     }
 
     let result;
     try {
-      result = await win.webContents.executeJavaScript(
-        buildTravelScript({
-          league,
-          savedId: target.savedId || null,
-          searchBody: target.searchBody || null,
-        }),
-        true
-      );
+      result = await win.webContents.executeJavaScript(buildClickScript(host), true);
     } catch (e) {
-      this.log('[travel] 스크립트 실행 오류: ' + (e && e.message ? e.message : e));
-      return { ok: false, reason: 'error' };
+      this.log('[travel] 클릭 스크립트 오류: ' + (e && e.message ? e.message : e));
+      result = { ok: false, reason: 'error' };
     }
-    this.log(`[travel] host=${host} league=${league} → ${JSON.stringify(result)}`);
+    this.log(`[travel] host=${host} → ${JSON.stringify(result)} url=${win.webContents.getURL()}`);
 
-    // 토큰 없음 = 미인증(검색/조회는 비로그인도 되지만 whisper_token 은 로그인해야 생김) →
-    // 401 이 안 떠도 로그인이 필요한 상태이므로 login_needed 로 통일하고 로그인 창을 띄운다.
-    if (result && (result.reason === 'login_needed' || result.reason === 'no_token')) {
-      this.showLogin(host, landing);
-      return { ...result, reason: 'login_needed' };
+    // 실패(특히 로그인 필요)면 창을 보여줘 사용자가 직접 로그인/클릭할 수 있게 한다.
+    if (!result || !result.ok) {
+      this.showLogin(host, searchUrl);
     }
     return result || { ok: false, reason: 'error' };
+  }
+
+  /** 로그인된 창에서 검색바디를 POST 해 검색 id 를 만든다(레어/카탈로그 즐겨찾기용). */
+  async _createSearch(win, host, league, searchBody) {
+    if (!this._isOnHost(win, host)) return 'login';
+    const lit = JSON.stringify({ league, searchBody })
+      .split(String.fromCharCode(0x2028)).join('').split(String.fromCharCode(0x2029)).join('');
+    const script = `(async () => { try {
+      const A = ${lit};
+      const r = await fetch(location.origin + '/api/trade2/search/' + encodeURIComponent(A.league),
+        { method:'POST', credentials:'include', headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},
+          body: JSON.stringify({ query: A.searchBody, sort: { price: 'asc' } }) });
+      if (r.status === 401) return 'login';
+      const j = await r.json().catch(() => null);
+      return (j && j.id) || null;
+    } catch (e) { return null; } })()`;
+    try {
+      return await win.webContents.executeJavaScript(script, true);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  _urlNoQuery(u) {
+    try {
+      const x = new URL(u);
+      return x.origin + x.pathname;
+    } catch (e) {
+      return u;
+    }
   }
 
   /** 창의 현재 문서가 주어진 거래 도메인(origin)인지 — 인증 fetch 실행 전 안전 확인. */
@@ -180,76 +205,30 @@ class TradeSession {
 }
 
 /**
- * 거래 창(로그인된 origin)에서 실행할 자체 완결 스크립트 문자열.
- * 같은 origin 이라 fetch 에 쿠키가 자동 포함되고 CORS 가 없다. 결과 객체를 반환.
+ * 거래 결과 페이지(로그인됨)에서 사이트의 "은신처로 이동" 버튼을 찾아 클릭하는 스크립트.
+ * 결과가 렌더될 때까지 잠시 폴링하고, 최상단(최저가) 매물의 버튼을 누른다.
+ * @param {string} host 거래 도메인(로그인/리다이렉트 판별용)
  */
-function buildTravelScript({ league, savedId, searchBody }) {
-  // JS 줄종결자(U+2028/2029)는 JSON.stringify 가 이스케이프하지 않고 정상 리그/ID 엔 없음
-  // → 제거해 주입 스크립트가 깨지지 않게 한다(보안 리뷰 반영).
-  const args = JSON.stringify({ league, savedId, searchBody })
-    .split(String.fromCharCode(0x2028)).join("").split(String.fromCharCode(0x2029)).join("");
+function buildClickScript(host) {
+  const hostLit = JSON.stringify(host);
   return `(async () => {
-    const A = ${args};
-    const base = location.origin + '/api/trade2';
-    const lg = encodeURIComponent(A.league);
-    const J = { 'content-type': 'application/json', 'x-requested-with': 'XMLHttpRequest' };
-    const d = { step: 'start' }; // 진단: 어디까지 갔고 각 단계 상태코드
-    try {
-      // 1) 검색 쿼리 확보: 저장검색이면 GET, 아니면 전달받은 검색바디.
-      let query = A.searchBody;
-      if (!query && A.savedId) {
-        d.step = 'getQuery';
-        const g = await fetch(base + '/search/' + lg + '/' + encodeURIComponent(A.savedId), { credentials: 'include' });
-        d.getStatus = g.status;
-        if (g.status === 401) return { ok:false, reason:'login_needed', diag:d };
-        const gj = await g.json().catch(() => null);
-        query = gj && gj.query;
+    const HOST = ${hostLit};
+    const LABELS = ['은신처로 이동', 'Travel to Hideout'];
+    // 실제 클릭 가능한 요소만(텍스트 래퍼 div 오클릭 방지). 정확히 라벨 텍스트인 것.
+    const find = () => Array.from(document.querySelectorAll('button, a, [role="button"]'))
+      .find(e => LABELS.includes((e.innerText || e.textContent || '').trim()) && e.offsetParent !== null);
+    for (let i = 0; i < 48; i++) { // 최대 ~12초: SPA 검색+렌더 대기
+      if (location.hostname.toLowerCase() !== HOST || location.pathname.toLowerCase().startsWith('/login')) {
+        return { ok:false, reason:'login_needed' };
       }
-      if (!query) return { ok:false, reason:'error', diag:d };
-      // 2) 가격 오름차순 재검색.
-      d.step = 'search';
-      const s = await fetch(base + '/search/' + lg, { method:'POST', credentials:'include', headers:J,
-        body: JSON.stringify({ query: query, sort: { price: 'asc' } }) });
-      d.searchStatus = s.status;
-      if (s.status === 401) return { ok:false, reason:'login_needed', diag:d };
-      if (s.status === 429) return { ok:false, reason:'rate_limited', diag:d };
-      const sj = await s.json().catch(() => null);
-      d.total = sj && sj.total;
-      d.resultN = sj && Array.isArray(sj.result) ? sj.result.length : 0;
-      if (!sj || !d.resultN) return { ok:false, reason:'no_listing', diag:d };
-      // 3) 최저가 매물 상세(인증 시 whisper_token 포함).
-      d.step = 'fetch';
-      const ids = sj.result.slice(0, 1).join(',');
-      const f = await fetch(base + '/fetch/' + ids + '?query=' + sj.id, { credentials: 'include' });
-      d.fetchStatus = f.status;
-      if (f.status === 401) return { ok:false, reason:'login_needed', diag:d };
-      if (f.status === 429) return { ok:false, reason:'rate_limited', diag:d };
-      const fj = await f.json().catch(() => null);
-      const L = fj && fj.result && fj.result[0] && fj.result[0].listing;
-      d.hasListing = !!L;
-      d.listingKeys = L ? Object.keys(L).join(',') : null; // whisper_token 필드명 확인용
-      // 토큰 후보(필드명이 다를 수 있어 여러 곳 탐색).
-      const token = L && (L.whisper_token || L.hideout_token || (L.whisper && L.whisper.token));
-      const seller = L && L.account && (L.account.lastCharacterName || L.account.name) || null;
-      d.hasToken = !!token;
-      if (!L) return { ok:false, reason:'no_listing', diag:d };
-      if (!token) return { ok:false, reason:'no_token', seller, diag:d };
-      // 4) 은신처 이동(거래 귓속말 토큰 전송).
-      d.step = 'whisper';
-      const w = await fetch(base + '/whisper', { method:'POST', credentials:'include', headers:J,
-        body: JSON.stringify({ token: token }) });
-      d.whisperStatus = w.status;
-      if (w.status === 401) return { ok:false, reason:'login_needed', seller, diag:d };
-      if (w.status === 429) return { ok:false, reason:'rate_limited', seller, diag:d };
-      if (!w.ok) {
-        d.whisperBody = (await w.text().catch(() => '')).slice(0, 200);
-        return { ok:false, reason:'whisper_failed', seller, diag:d };
-      }
-      return { ok:true, seller, diag:d };
-    } catch (e) {
-      d.error = String(e && e.message ? e.message : e).slice(0, 200);
-      return { ok:false, reason:'error', diag:d };
+      const b = find();
+      if (b) { b.click(); return { ok:true }; }
+      await new Promise(r => setTimeout(r, 250));
     }
+    const t = document.body ? document.body.innerText : '';
+    if (/로그인/.test(t) && !/은신처로 이동|순간이동/.test(t)) return { ok:false, reason:'login_needed' };
+    if (/순간이동/.test(t)) return { ok:false, reason:'in_progress' }; // 이미 이동 중인 매물만 있음
+    return { ok:false, reason:'no_button' }; // 매물 없음/페이지 구조 변경
   })()`;
 }
 
