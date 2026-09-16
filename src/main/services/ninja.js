@@ -8,7 +8,7 @@ const { getJson } = require('./http');
  *
  * 두 종류의 응답 형태(실측 확정):
  *  - exchange : { core:{items,rates,primary,secondary}, lines:[{id,primaryValue,sparkline,...}], items:[{id,name,image,category}] }
- *  - stash    : { core:{...}, lines:[{name,baseType,icon,primaryValue,listingCount,sparkLine,...}] }
+ *  - stash    : { core:{...}, lines:[{name,baseType,variant,icon,primaryValue,listingCount,sparkLine,...}] }
  *
  * primaryValue 는 core.primary(=divine) 통화 기준 가치이며,
  * core.rates 는 "primary 1개당 해당 통화 개수"(예: exalted: 87.69 → 1 divine = 87.69 exalted).
@@ -90,6 +90,7 @@ function parseStash(json) {
       volume: typeof line.listingCount === 'number' ? line.listingCount : null,
       corrupted: !!line.corrupted,
       levelRequired: line.levelRequired || null,
+      variant: typeof line.variant === 'string' ? line.variant : '',
     });
   }
   return { records: out, ref: refCurrencies(core) };

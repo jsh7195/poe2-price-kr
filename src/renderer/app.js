@@ -184,13 +184,14 @@ function isUniqueRec(rec) {
 
 // ---------- 즐겨찾기 ----------
 function catKey(rec) {
-  return 'cat:' + [rec.categoryKey, rec.enNorm, rec.baseType || '', rec.corrupted ? 1 : 0].join('|');
+  return 'cat:' + [rec.categoryKey, rec.enNorm, rec.baseType || '', rec.corrupted ? 1 : 0, rec.variant || ''].join('|');
 }
 function favDescriptor(rec) {
   return {
     en: rec.en, enNorm: rec.enNorm, categoryKey: rec.categoryKey,
-    baseType: rec.baseType || '', corrupted: !!rec.corrupted,
+    baseType: rec.baseType || '', corrupted: !!rec.corrupted, variant: rec.variant || '',
     kr: rec.kr, icon: rec.icon || '', labelKr: rec.labelKr || '',
+    valueDivine: rec.valueDivine ?? null, valueExalted: rec.valueExalted ?? null,
   };
 }
 function starButton(rec) {
@@ -442,6 +443,7 @@ function priceDescriptor(rec) {
     categoryKey: rec.categoryKey,
     baseType: rec.baseType || '',
     corrupted: !!rec.corrupted,
+    variant: rec.variant || '',
   };
 }
 
@@ -608,7 +610,7 @@ function applyStatus(s) {
     for (const l of s.leagues) {
       const opt = document.createElement('option');
       opt.value = l.name;
-      opt.textContent = l.displayName + (l.hardcore ? '' : '');
+      opt.textContent = l.displayKr ? `${l.displayKr} (${l.displayName})` : l.displayName;
       el.league.appendChild(opt);
     }
   }

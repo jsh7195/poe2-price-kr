@@ -50,7 +50,7 @@ git tag v1.0.1 && git push origin v1.0.1   # → CI가 빌드 + 게시
 | 용도 | 출처 |
 |---|---|
 | 시세 | poe.ninja PoE2 economy API (`exchange` / `stash` overview) — 공개 JSON, 무인증 |
-| 한글 ↔ 영문 사전 | GGG 공식 거래 데이터: 영문(`pathofexile.com`) + 한글(`poe.game.daum.net`) realm |
+| 한글 ↔ 영문 사전 | GGG 공식 거래 데이터: 영문(`pathofexile.com`) + 한글(`poe.kakaogames.com`, 구 `poe.game.daum.net`) realm |
 
 한글↔영문은 두 realm 이 공유하는 안정적 키로 조인합니다.
 - 통화·소모품류: 항목 `id` 직접 조인 → 100% 커버

@@ -6,7 +6,7 @@ const { getJson } = require('./http');
 /**
  * GGG 거래소 스탯 사전(한글) 기반 "모드 텍스트 → stat id" 매처.
  *
- * 출처: poe.game.daum.net/api/trade2/data/stats  (8천여 항목)
+ * 출처: poe.kakaogames.com/api/trade2/data/stats  (8천여 항목)
  *   result: [ { label, entries:[ { id, text } ] } ]
  *   id 예: "explicit.stat_3372524247", text 예: "화염 저항 #%"  (#=수치 자리)
  *

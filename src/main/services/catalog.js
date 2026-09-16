@@ -11,8 +11,13 @@ const { normKr, normEn } = require('./normalize');
  * GGG 사전(enToKr)으로 한글명을 붙여 검색 가능한 레코드 배열을 만든다.
  */
 
+// poe.ninja variant(등급) 한글 표기. keepVariants 카테고리(서판)에서만 사용.
+const VARIANT_KR = Object.freeze({ Normal: '일반', Magic: '마법', Rare: '희귀' });
+
 function toRecord(raw, category, enToKr) {
-  const kr = enToKr[normEn(raw.en)] || raw.en; // 사전에 없으면 영문 폴백
+  const baseKr = enToKr[normEn(raw.en)] || raw.en; // 사전에 없으면 영문 폴백
+  const variant = category.keepVariants && raw.variant ? raw.variant : '';
+  const kr = variant ? `${baseKr} (${VARIANT_KR[variant] || variant})` : baseKr;
   return {
     kr,
     en: raw.en,
@@ -30,6 +35,7 @@ function toRecord(raw, category, enToKr) {
     volume: raw.volume ?? null,
     corrupted: !!raw.corrupted,
     levelRequired: raw.levelRequired || null,
+    variant,
   };
 }
 
@@ -72,7 +78,8 @@ function dedupe(records) {
   const byKey = new Map();
   for (const r of records) {
     // 타락/비타락은 같은 이름·기반이라도 별개 시세 → 키에 corrupted 포함
-    const key = `${r.categoryKey}|${r.enNorm}|${normEn(r.baseType)}|${r.corrupted ? '1' : '0'}`;
+    // keepVariants 카테고리는 등급(variant)별 시세가 달라 별개 레코드로 유지
+    const key = `${r.categoryKey}|${r.enNorm}|${normEn(r.baseType)}|${r.corrupted ? '1' : '0'}|${r.variant || ''}`;
     const prev = byKey.get(key);
     if (!prev) {
       byKey.set(key, r);

@@ -14,7 +14,8 @@ const ENDPOINTS = Object.freeze({
   ninjaIndexState: 'https://poe.ninja/poe2/api/data/index-state',
   // GGG 공식 거래 데이터 (한글↔영문 사전 출처)
   gggEn: 'https://www.pathofexile.com/api/trade2/data',
-  gggKr: 'https://poe.game.daum.net/api/trade2/data',
+  // 2026-09 실측: poe.game.daum.net 은 poe.kakaogames.com 으로 301 이전됨.
+  gggKr: 'https://poe.kakaogames.com/api/trade2/data',
   // 아이콘(gen/image 상대경로) 보정용 CDN
   poecdn: 'https://web.poecdn.com',
 });
@@ -42,6 +43,7 @@ const TTL = Object.freeze({
  * labelKr   : UI 표기(한글)
  * endpoint  : 'exchange' | 'stash'
  * type      : poe.ninja API의 type 파라미터 (실측 확정)
+ * keepVariants: true 면 poe.ninja 의 variant(Normal/Magic/Rare)를 별개 레코드로 유지
  */
 const CATEGORIES = Object.freeze([
   // --- 통화/소모품류 (exchange) ---
@@ -66,7 +68,9 @@ const CATEGORIES = Object.freeze([
   { key: 'uniqueFlasks', labelKr: '유니크 플라스크', endpoint: 'stash', type: 'UniqueFlasks' },
   { key: 'uniqueCharms', labelKr: '유니크 부적', endpoint: 'stash', type: 'UniqueCharms' },
   { key: 'uniqueJewels', labelKr: '유니크 주얼', endpoint: 'stash', type: 'UniqueJewels' },
-  { key: 'uniqueMaps', labelKr: '유니크 지도', endpoint: 'stash', type: 'UniqueMaps' },
+  // --- 서판 (stash, 일반/마법/희귀 등급별 시세가 달라 variant 를 유지) ---
+  { key: 'precursorTablets', labelKr: '선구자 서판', endpoint: 'stash', type: 'PrecursorTablets', keepVariants: true },
+  // (UniqueMaps 는 PoE2 poe.ninja 에 존재하지 않아 404 — 0.5.5 정리 시 제거)
 ]);
 
 module.exports = { ENDPOINTS, USER_AGENT, HTTP, TTL, CATEGORIES };

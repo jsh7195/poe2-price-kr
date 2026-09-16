@@ -3,7 +3,7 @@
 const { EventEmitter } = require('events');
 const { TTL } = require('../config');
 const { DiskCache } = require('./cache');
-const { fetchLeagues } = require('./leagues');
+const { fetchLeagues, resolveLeague, pickCurrent } = require('./leagues');
 const { buildDictionary } = require('./dictionary');
 const { buildCatalog } = require('./catalog');
 const { search, scoreRecord } = require('./search');
@@ -53,6 +53,12 @@ function priceSnapshot(p) {
  * 캐시(사전/리그/카탈로그)를 관리하고, 검색·갱신·리그변경을 조율한다.
  * 진행 상태는 'status' 이벤트로 방출 → 메인이 렌더러로 전달.
  */
+/** 카탈로그 즐겨찾기 dedup 키. 서판처럼 등급(variant)별 레코드가 갈리는 카테고리는 등급까지 포함한다. */
+function catalogFavoriteKey(rec) {
+  const enNorm = rec.enNorm || normEn(rec.en || '');
+  return 'cat:' + [rec.categoryKey, enNorm, rec.baseType || '', rec.corrupted ? 1 : 0, rec.variant || ''].join('|');
+}
+
 class Store extends EventEmitter {
   constructor(cacheDir) {
     super();
@@ -165,12 +171,25 @@ class Store extends EventEmitter {
       await this.cache.set('leagues', data);
     }
     this.leagues = data.leagues;
-    if (!this.selectedLeague) {
-      const settings = await this.getSettings();
-      const wanted = settings.league;
-      const exists = wanted && data.leagues.some((l) => l.name === wanted);
-      this.selectedLeague = exists ? wanted : data.current ? data.current.name : null;
+    const settings = await this.getSettings();
+    // 캐시된 current 는 구버전 판정 결과일 수 있으므로 목록에서 다시 계산한다.
+    const current = pickCurrent(data.leagues) || data.current || null;
+    const curName = current ? current.name : null;
+    // 새 시즌 감지: 마지막으로 본 현재 시즌(seasonLeague)과 다르면 리그를 다시 결정한다.
+    const seasonChanged = !!curName && settings.seasonLeague !== curName;
+    if (!this.selectedLeague || seasonChanged) {
+      const resolved = resolveLeague({
+        wanted: this.selectedLeague || settings.league,
+        prevCurrent: settings.seasonLeague,
+        leagues: data.leagues,
+        current,
+      });
+      if (resolved && resolved !== this.selectedLeague) {
+        this.selectedLeague = resolved;
+        if (settings.league !== resolved) await this.setSetting('league', resolved);
+      }
     }
+    if (seasonChanged) await this.setSetting('seasonLeague', curName);
     return this.leagues;
   }
 
@@ -395,6 +414,13 @@ class Store extends EventEmitter {
 
   // ---- 즐겨찾기 (메인창 적재 워치리스트) ----
 
+  /** 즐겨찾기에 저장된 축약 레코드를 현재 카탈로그의 동일 아이템(등급 포함)으로 치환 — 통화류 재조회에 최신 ninja 값 사용. */
+  _freshCatalogRec(rec) {
+    if (!rec || !this.catalog || !Array.isArray(this.catalog.records)) return null;
+    const key = catalogFavoriteKey(rec);
+    return this.catalog.records.find((r) => catalogFavoriteKey(r) === key) || null;
+  }
+
   /** 저장된 즐겨찾기 목록. */
   async getFavorites() {
     const s = await this.getSettings();
@@ -411,7 +437,7 @@ class Store extends EventEmitter {
   async addCatalogFavorite(rec) {
     if (!rec || !rec.en) return this.getFavorites();
     const enNorm = rec.enNorm || normEn(rec.en);
-    const key = 'cat:' + [rec.categoryKey, enNorm, rec.baseType || '', rec.corrupted ? 1 : 0].join('|');
+    const key = catalogFavoriteKey({ ...rec, enNorm });
     const list = await this.getFavorites();
     if (list.some((f) => f.key === key)) return list;
     let lastPrice = null;
@@ -423,7 +449,7 @@ class Store extends EventEmitter {
     const fav = {
       key, kind: 'catalog',
       kr: rec.kr || rec.en, en: rec.en, base: rec.baseType || '', icon: rec.icon || '', labelKr: rec.labelKr || '',
-      rec: { en: rec.en, enNorm, categoryKey: rec.categoryKey, baseType: rec.baseType || '', corrupted: !!rec.corrupted },
+      rec: { en: rec.en, enNorm, categoryKey: rec.categoryKey, baseType: rec.baseType || '', corrupted: !!rec.corrupted, variant: rec.variant || '' },
       lastPrice, savedAt: Date.now(),
     };
     return this._saveFavorites([...list, fav]);
@@ -495,7 +521,7 @@ class Store extends EventEmitter {
   /** 즐겨찾기 종류별 현재 시세 조회(최저가 매물). 갱신·귓속말 양쪽이 공유. */
   async _favoritePrice(fav) {
     if (!fav) return null;
-    if (fav.kind === 'catalog') return this._priceRecord(fav.rec);
+    if (fav.kind === 'catalog') return this._priceRecord(this._freshCatalogRec(fav.rec) || fav.rec);
     if (fav.kind === 'url') {
       const parsed = ggg.parseTradeUrl(fav.url);
       return parsed ? ggg.fetchSavedSearch(parsed) : null;
@@ -807,4 +833,4 @@ class Store extends EventEmitter {
   }
 }
 
-module.exports = { Store };
+module.exports = { Store, catalogFavoriteKey };
